@@ -1,0 +1,32 @@
+spring:
+  application:
+    name: nicolas-backend
+
+server:
+  port: 8080
+  error:
+    include-message: always
+    include-binding-errors: always
+
+# URL of the Python FastAPI backend.
+# Override via environment variable: PYTHON_BACKEND_URL=http://...
+python:
+  backend:
+    url: ${PYTHON_BACKEND_URL:http://localhost:8000}
+
+# Spring Boot Actuator (internal health / metrics)
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+# Logging
+logging:
+  level:
+    root: INFO
+    com.nicolas: DEBUG
+    org.springframework.web.reactive.function.client: DEBUG

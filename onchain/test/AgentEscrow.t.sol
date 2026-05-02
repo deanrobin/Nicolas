@@ -5,9 +5,8 @@ import {Test} from "forge-std/Test.sol";
 import {AgentEscrow} from "../src/AgentEscrow.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
-// Minimal mock USDC for testing
-contract MockUSDC is ERC20 {
-    constructor() ERC20("USD Coin", "USDC") {}
+contract MockUSDT is ERC20 {
+    constructor() ERC20("Tether USD", "USDT") {}
 
     function mint(address to, uint256 amount) external {
         _mint(to, amount);
@@ -16,156 +15,195 @@ contract MockUSDC is ERC20 {
 
 contract AgentEscrowTest is Test {
     AgentEscrow escrow;
-    MockUSDC usdc;
+    MockUSDT usdt;
+    MockUSDT otherToken;
 
     address owner = makeAddr("owner");
     address feeRecipient = makeAddr("feeRecipient");
     address arbitrator = makeAddr("arbitrator");
     address buyer = makeAddr("buyer");
     address seller = makeAddr("seller");
+    address rescueTo = makeAddr("rescueTo");
 
-    uint256 constant FEE_BPS = 250; // 2.5%
-    uint256 constant ORDER_AMOUNT = 1_000_000; // 1 USDC (6 decimals)
-
-    bytes32 constant ORDER_ID = keccak256("order_abc123");
+    uint256 constant FEE_BPS = 0;
+    uint256 constant ORDER_AMOUNT = 1_000_000; // 1 USDT (6 decimals)
+    bytes32 constant ORDER_ID = keccak256("order_001");
 
     function setUp() public {
-        vm.startPrank(owner);
-        escrow = new AgentEscrow(feeRecipient, arbitrator, FEE_BPS);
+        usdt = new MockUSDT();
+        otherToken = new MockUSDT();
+
+        vm.prank(owner);
+        escrow = new AgentEscrow(feeRecipient, arbitrator, FEE_BPS, address(usdt));
+
+        usdt.mint(buyer, 10 * ORDER_AMOUNT);
+        otherToken.mint(buyer, 10 * ORDER_AMOUNT);
+
+        vm.startPrank(buyer);
+        usdt.approve(address(escrow), type(uint256).max);
+        otherToken.approve(address(escrow), type(uint256).max);
         vm.stopPrank();
+    }
 
-        usdc = new MockUSDC();
-        usdc.mint(buyer, 10 * ORDER_AMOUNT);
+    function _create() internal {
+        vm.prank(buyer);
+        escrow.createOrder(ORDER_ID, seller, address(usdt), ORDER_AMOUNT, 0);
+    }
+
+    // ─── 白名单 ───────────────────────────────────────────────────────────────
+
+    function test_initialToken_isWhitelisted() public view {
+        assertTrue(escrow.whitelistedTokens(address(usdt)));
+    }
+
+    function test_createOrder_revertsForNonWhitelistedToken() public {
+        vm.expectRevert(abi.encodeWithSelector(AgentEscrow.TokenNotWhitelisted.selector, address(otherToken)));
+        vm.prank(buyer);
+        escrow.createOrder(ORDER_ID, seller, address(otherToken), ORDER_AMOUNT, 0);
+    }
+
+    function test_owner_canWhitelistAndRevoke() public {
+        vm.prank(owner);
+        escrow.setTokenWhitelist(address(otherToken), true);
+        assertTrue(escrow.whitelistedTokens(address(otherToken)));
 
         vm.prank(buyer);
-        usdc.approve(address(escrow), type(uint256).max);
+        escrow.createOrder(ORDER_ID, seller, address(otherToken), ORDER_AMOUNT, 0);
+
+        vm.prank(owner);
+        escrow.setTokenWhitelist(address(otherToken), false);
+        assertFalse(escrow.whitelistedTokens(address(otherToken)));
     }
 
-    function _createOrder() internal {
+    function test_setTokenWhitelist_onlyOwner() public {
+        vm.expectRevert();
         vm.prank(buyer);
-        escrow.createOrder(ORDER_ID, seller, address(usdc), ORDER_AMOUNT, block.timestamp + 1 days, 0);
+        escrow.setTokenWhitelist(address(otherToken), true);
     }
 
-    // ─── createOrder ──────────────────────────────────────────────────────────
+    // ─── 创建订单 ─────────────────────────────────────────────────────────────
 
-    function test_createOrder_lockedFunds() public {
-        _createOrder();
-        assertEq(usdc.balanceOf(address(escrow)), ORDER_AMOUNT);
-        (address b, address s,,,,,,,AgentEscrow.OrderStatus status) = _unpackOrder(ORDER_ID);
-        assertEq(b, buyer);
-        assertEq(s, seller);
-        assertEq(uint8(status), uint8(AgentEscrow.OrderStatus.EscrowHeld));
+    function test_createOrder_locksFunds() public {
+        _create();
+        assertEq(usdt.balanceOf(address(escrow)), ORDER_AMOUNT);
+        AgentEscrow.Order memory o = escrow.getOrder(ORDER_ID);
+        assertEq(o.buyer, buyer);
+        assertEq(o.seller, seller);
+        assertEq(o.amount, ORDER_AMOUNT);
+        assertEq(o.lockBlocks, escrow.defaultLockBlocks());
+        assertEq(uint8(o.status), uint8(AgentEscrow.OrderStatus.EscrowHeld));
     }
 
-    function test_createOrder_reverts_duplicate() public {
-        _createOrder();
+    function test_createOrder_customLockBlocks() public {
+        vm.prank(buyer);
+        escrow.createOrder(ORDER_ID, seller, address(usdt), ORDER_AMOUNT, 100);
+        AgentEscrow.Order memory o = escrow.getOrder(ORDER_ID);
+        assertEq(o.lockBlocks, 100);
+    }
+
+    function test_createOrder_revertsForDuplicate() public {
+        _create();
         vm.expectRevert(AgentEscrow.OrderAlreadyExists.selector);
         vm.prank(buyer);
-        escrow.createOrder(ORDER_ID, seller, address(usdc), ORDER_AMOUNT, block.timestamp + 1 days, 0);
+        escrow.createOrder(ORDER_ID, seller, address(usdt), ORDER_AMOUNT, 0);
     }
 
-    function test_createOrder_reverts_zeroAmount() public {
-        vm.expectRevert(AgentEscrow.ZeroAmount.selector);
-        vm.prank(buyer);
-        escrow.createOrder(ORDER_ID, seller, address(usdc), 0, block.timestamp + 1 days, 0);
-    }
+    // ─── 立即确认 ─────────────────────────────────────────────────────────────
 
-    // ─── Happy path: confirm delivery ─────────────────────────────────────────
-
-    function test_confirmDelivery_releaseFunds() public {
-        _createOrder();
+    function test_confirmDelivery_releasesFunds() public {
+        _create();
         vm.prank(buyer);
         escrow.confirmDelivery(ORDER_ID);
-
-        uint256 expectedFee = (ORDER_AMOUNT * FEE_BPS) / 10_000;
-        assertEq(usdc.balanceOf(seller), ORDER_AMOUNT - expectedFee);
-        assertEq(usdc.balanceOf(feeRecipient), expectedFee);
-        assertEq(usdc.balanceOf(address(escrow)), 0);
+        assertEq(usdt.balanceOf(seller), ORDER_AMOUNT); // fee = 0
+        assertEq(usdt.balanceOf(address(escrow)), 0);
     }
 
-    // ─── Happy path: auto-release ─────────────────────────────────────────────
+    // ─── 区块锁定 + 自动放款 ──────────────────────────────────────────────────
 
-    function test_autoRelease_afterWindow() public {
-        _createOrder();
+    function test_autoRelease_revertsBeforeLockExpires() public {
+        _create();
         vm.prank(seller);
         escrow.markDelivered(ORDER_ID);
 
-        vm.warp(block.timestamp + 49 hours);
-        escrow.autoRelease(ORDER_ID);
-
-        uint256 expectedFee = (ORDER_AMOUNT * FEE_BPS) / 10_000;
-        assertEq(usdc.balanceOf(seller), ORDER_AMOUNT - expectedFee);
-    }
-
-    function test_autoRelease_reverts_windowOpen() public {
-        _createOrder();
-        vm.prank(seller);
-        escrow.markDelivered(ORDER_ID);
-
-        vm.expectRevert(AgentEscrow.DisputeWindowStillOpen.selector);
+        // 锁定期内
+        vm.roll(block.number + escrow.defaultLockBlocks());
+        vm.expectRevert(AgentEscrow.LockStillActive.selector);
         escrow.autoRelease(ORDER_ID);
     }
 
-    // ─── Dispute: full refund ─────────────────────────────────────────────────
-
-    function test_dispute_fullRefund() public {
-        _createOrder();
+    function test_autoRelease_succeedsAfterLockExpires() public {
+        _create();
         vm.prank(seller);
         escrow.markDelivered(ORDER_ID);
 
+        vm.roll(block.number + escrow.defaultLockBlocks() + 1);
+        // 任意人都可触发
+        address keeper = makeAddr("keeper");
+        vm.prank(keeper);
+        escrow.autoRelease(ORDER_ID);
+
+        assertEq(usdt.balanceOf(seller), ORDER_AMOUNT);
+    }
+
+    function test_isReleasable_view() public {
+        _create();
+        vm.prank(seller);
+        escrow.markDelivered(ORDER_ID);
+
+        assertFalse(escrow.isReleasable(ORDER_ID));
+        vm.roll(block.number + escrow.defaultLockBlocks() + 1);
+        assertTrue(escrow.isReleasable(ORDER_ID));
+    }
+
+    // ─── 纠纷流程 ─────────────────────────────────────────────────────────────
+
+    function test_raiseDispute_revertsAfterLockExpires() public {
+        _create();
+        vm.prank(seller);
+        escrow.markDelivered(ORDER_ID);
+        vm.roll(block.number + escrow.defaultLockBlocks() + 1);
+
+        vm.expectRevert(AgentEscrow.LockExpired.selector);
+        vm.prank(buyer);
+        escrow.raiseDispute(ORDER_ID);
+    }
+
+    function test_dispute_fullRefund_waivesFee() public {
+        vm.prank(owner);
+        escrow.setFee(500); // 5% fee
+        _create();
+        vm.prank(seller);
+        escrow.markDelivered(ORDER_ID);
         vm.prank(buyer);
         escrow.raiseDispute(ORDER_ID);
 
         vm.prank(arbitrator);
         escrow.resolveDispute(ORDER_ID, 10_000);
 
-        assertEq(usdc.balanceOf(buyer), 10 * ORDER_AMOUNT); // got everything back
-        assertEq(usdc.balanceOf(seller), 0);
-        assertEq(usdc.balanceOf(feeRecipient), 0); // fee waived on full refund
+        assertEq(usdt.balanceOf(buyer), 10 * ORDER_AMOUNT);
+        assertEq(usdt.balanceOf(feeRecipient), 0);
     }
 
-    // ─── Dispute: partial refund (50/50) ──────────────────────────────────────
-
-    function test_dispute_partialRefund() public {
-        _createOrder();
+    function test_dispute_partialRefund_chargesFee() public {
+        vm.prank(owner);
+        escrow.setFee(500); // 5%
+        _create();
         vm.prank(seller);
         escrow.markDelivered(ORDER_ID);
-
         vm.prank(buyer);
         escrow.raiseDispute(ORDER_ID);
 
         vm.prank(arbitrator);
         escrow.resolveDispute(ORDER_ID, 5_000); // 50% to buyer
 
-        uint256 fee = (ORDER_AMOUNT * FEE_BPS) / 10_000;
+        uint256 fee = (ORDER_AMOUNT * 500) / 10_000;
         uint256 net = ORDER_AMOUNT - fee;
-        assertEq(usdc.balanceOf(buyer), 10 * ORDER_AMOUNT - ORDER_AMOUNT + net / 2);
-        assertEq(usdc.balanceOf(seller), net / 2);
-        assertEq(usdc.balanceOf(feeRecipient), fee);
+        assertEq(usdt.balanceOf(seller), net / 2);
+        assertEq(usdt.balanceOf(feeRecipient), fee);
     }
 
-    // ─── Dispute: no refund (full release to seller) ──────────────────────────
-
-    function test_dispute_noRefund() public {
-        _createOrder();
-        vm.prank(seller);
-        escrow.markDelivered(ORDER_ID);
-
-        vm.prank(buyer);
-        escrow.raiseDispute(ORDER_ID);
-
-        vm.prank(arbitrator);
-        escrow.resolveDispute(ORDER_ID, 0);
-
-        uint256 fee = (ORDER_AMOUNT * FEE_BPS) / 10_000;
-        assertEq(usdc.balanceOf(seller), ORDER_AMOUNT - fee);
-        assertEq(usdc.balanceOf(feeRecipient), fee);
-    }
-
-    // ─── Access control ───────────────────────────────────────────────────────
-
-    function test_resolveDispute_onlyArbitrator() public {
-        _createOrder();
+    function test_dispute_onlyArbitrator() public {
+        _create();
         vm.prank(seller);
         escrow.markDelivered(ORDER_ID);
         vm.prank(buyer);
@@ -174,50 +212,106 @@ contract AgentEscrowTest is Test {
         vm.expectRevert(AgentEscrow.Unauthorized.selector);
         vm.prank(buyer);
         escrow.resolveDispute(ORDER_ID, 10_000);
-    }
 
-    function test_raiseDispute_afterWindowReverts() public {
-        _createOrder();
-        vm.prank(seller);
-        escrow.markDelivered(ORDER_ID);
-
-        vm.warp(block.timestamp + 49 hours);
-
-        vm.expectRevert(AgentEscrow.DisputeWindowExpired.selector);
-        vm.prank(buyer);
-        escrow.raiseDispute(ORDER_ID);
-    }
-
-    // ─── Admin ────────────────────────────────────────────────────────────────
-
-    function test_setFee_onlyOwner() public {
+        vm.expectRevert(AgentEscrow.Unauthorized.selector);
         vm.prank(owner);
-        escrow.setFee(500);
-        assertEq(escrow.feeBps(), 500);
+        escrow.resolveDispute(ORDER_ID, 10_000);
+    }
 
+    // ─── 强制中断 ─────────────────────────────────────────────────────────────
+
+    function test_forceInterrupt_freezesOrder() public {
+        _create();
+        vm.prank(owner);
+        escrow.forceInterrupt(ORDER_ID, "suspicious activity");
+
+        AgentEscrow.Order memory o = escrow.getOrder(ORDER_ID);
+        assertEq(uint8(o.status), uint8(AgentEscrow.OrderStatus.Interrupted));
+
+        // 中断后所有正常流转都失败
         vm.expectRevert();
         vm.prank(buyer);
-        escrow.setFee(100);
+        escrow.confirmDelivery(ORDER_ID);
+
+        vm.expectRevert();
+        vm.prank(seller);
+        escrow.markDelivered(ORDER_ID);
     }
 
-    // ─── Helpers ──────────────────────────────────────────────────────────────
+    function test_forceInterrupt_onlyOwner() public {
+        _create();
+        vm.expectRevert();
+        vm.prank(buyer);
+        escrow.forceInterrupt(ORDER_ID, "x");
+    }
 
-    function _unpackOrder(bytes32 id)
-        internal
-        view
-        returns (
-            address b,
-            address s,
-            address token,
-            uint256 amount,
-            uint256 fee,
-            uint256 deliverBy,
-            uint256 disputeWindow,
-            uint256 deliveredAt,
-            AgentEscrow.OrderStatus status
-        )
-    {
-        AgentEscrow.Order memory o = escrow.getOrder(id);
-        return (o.buyer, o.seller, o.token, o.amount, o.fee, o.deliverBy, o.disputeWindow, o.deliveredAt, o.status);
+    function test_forceInterrupt_worksOnDeliveredAndDisputed() public {
+        _create();
+        vm.prank(seller);
+        escrow.markDelivered(ORDER_ID);
+        vm.prank(owner);
+        escrow.forceInterrupt(ORDER_ID, "delivered phase");
+
+        bytes32 id2 = keccak256("order_002");
+        vm.prank(buyer);
+        escrow.createOrder(id2, seller, address(usdt), ORDER_AMOUNT, 0);
+        vm.prank(seller);
+        escrow.markDelivered(id2);
+        vm.prank(buyer);
+        escrow.raiseDispute(id2);
+        vm.prank(owner);
+        escrow.forceInterrupt(id2, "disputed phase");
+    }
+
+    // ─── 紧急救援 ─────────────────────────────────────────────────────────────
+
+    function test_rescueTokens_ownerCanWithdraw() public {
+        _create();
+        vm.prank(owner);
+        escrow.forceInterrupt(ORDER_ID, "manual");
+
+        vm.prank(owner);
+        escrow.rescueTokens(address(usdt), rescueTo, ORDER_AMOUNT);
+        assertEq(usdt.balanceOf(rescueTo), ORDER_AMOUNT);
+    }
+
+    function test_rescueTokens_onlyOwner() public {
+        _create();
+        vm.expectRevert();
+        vm.prank(buyer);
+        escrow.rescueTokens(address(usdt), rescueTo, ORDER_AMOUNT);
+    }
+
+    function test_rescueTokens_worksForAnyToken() public {
+        // 误转入的非白名单 token 也能救出
+        otherToken.mint(address(escrow), 500);
+        vm.prank(owner);
+        escrow.rescueTokens(address(otherToken), rescueTo, 500);
+        assertEq(otherToken.balanceOf(rescueTo), 500);
+    }
+
+    // ─── 管理员配置 ───────────────────────────────────────────────────────────
+
+    function test_setFee_capped() public {
+        vm.prank(owner);
+        vm.expectRevert(AgentEscrow.FeeTooHigh.selector);
+        escrow.setFee(1001);
+
+        vm.prank(owner);
+        escrow.setFee(1000);
+        assertEq(escrow.feeBps(), 1000);
+    }
+
+    function test_setDefaultLockBlocks() public {
+        vm.prank(owner);
+        escrow.setDefaultLockBlocks(100);
+        assertEq(escrow.defaultLockBlocks(), 100);
+    }
+
+    function test_setArbitrator() public {
+        address newArb = makeAddr("newArb");
+        vm.prank(owner);
+        escrow.setArbitrator(newArb);
+        assertEq(escrow.arbitrator(), newArb);
     }
 }

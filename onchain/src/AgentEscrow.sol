@@ -8,19 +8,15 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
  * @title  AgentEscrow
- * @notice Relay escrow contract for Agents Bazaar.
+ * @notice Agents Bazaar 中转/托管合约 — 部署在 XLayer。
  *
- *         Flow:
- *           1. Buyer calls createOrder() — USDC locked in this contract.
- *           2. Seller calls markDelivered() — dispute window starts.
- *           3a. Buyer calls confirmDelivery() — funds released to seller (minus fee).
- *           3b. No action after dispute window → anyone calls autoRelease().
- *           3c. Buyer calls raiseDispute() within window → arbitrator resolves.
- *
- *         Dispute resolution options:
- *           - Full refund  (buyerRefundBps = 10000): buyer gets everything, fee waived.
- *           - Partial      (0 < buyerRefundBps < 10000): fee charged, net split by ratio.
- *           - Full release (buyerRefundBps = 0): seller gets net, platform gets fee.
+ *         设计要点：
+ *           - 仅接收白名单 Token（默认 XLayer USDT，免 Gas 转账）
+ *           - 用区块数（block.number）替代时间作为锁定窗口
+ *           - 卖家或任意人都可在锁定到期后触发放款
+ *           - Owner 可强制中断任意订单（资金冻结），并随后通过 rescueTokens 处置
+ *           - 仲裁者（单签）处理纠纷，可全退/部分退/全放款
+ *           - 手续费默认 0，可由 Owner 调整（上限 10%）
  */
 contract AgentEscrow is ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20;
@@ -28,36 +24,39 @@ contract AgentEscrow is ReentrancyGuard, Ownable {
     // ─── Types ────────────────────────────────────────────────────────────────
 
     enum OrderStatus {
-        EscrowHeld, // funds locked, agent executing
-        Delivered,  // seller marked delivered, dispute window open
-        Completed,  // buyer confirmed or auto-released
-        Disputed,   // buyer raised dispute, awaiting arbitration
-        Refunded    // fully refunded to buyer
+        None,         // 占位，未创建
+        EscrowHeld,   // 已托管，等待卖家交付
+        Delivered,    // 卖家已交付，区块锁定中
+        Completed,    // 已完成（放款给卖家）
+        Disputed,     // 买家已发起纠纷
+        Refunded,     // 已全额退款给买家
+        Interrupted   // Owner 强制中断，资金冻结
     }
 
     struct Order {
         address buyer;
         address seller;
-        address token;         // ERC-20 payment token (e.g. USDC)
-        uint256 amount;        // gross amount deposited by buyer
-        uint256 fee;           // platform fee portion (derived from feeBps at creation)
-        uint256 deliverBy;     // unix timestamp deadline for delivery
-        uint256 disputeWindow; // seconds buyer has to dispute after delivery
-        uint256 deliveredAt;   // timestamp when seller marked delivered (0 if not yet)
+        address token;          // 必须在 whitelistedTokens 中
+        uint256 amount;         // 买家锁入的总额
+        uint256 fee;            // 创建订单时按当时 feeBps 锁定的手续费
+        uint256 lockBlocks;     // 交付后需要等待的区块数
+        uint256 deliveredAtBlock; // 卖家 markDelivered 时的区块号
         OrderStatus status;
     }
 
     // ─── Storage ──────────────────────────────────────────────────────────────
 
     mapping(bytes32 => Order) public orders;
+    mapping(address => bool) public whitelistedTokens;
 
     address public feeRecipient;
-    uint256 public feeBps;                    // platform fee in basis points (250 = 2.5%)
-    uint256 public constant MAX_FEE_BPS = 1000; // hard cap at 10%
+    uint256 public feeBps;                       // 基点，250 = 2.5%
+    uint256 public constant MAX_FEE_BPS = 1000;  // 硬上限 10%
 
-    address public arbitrator;                // multi-sig admin for dispute resolution
+    address public arbitrator;                   // 单签仲裁者
 
-    uint256 public defaultDisputeWindow = 48 hours;
+    /// @notice 默认锁定区块数（XLayer 出块约 3s，28800 块 ≈ 24 小时）
+    uint256 public defaultLockBlocks = 28_800;
 
     // ─── Events ───────────────────────────────────────────────────────────────
 
@@ -67,16 +66,20 @@ contract AgentEscrow is ReentrancyGuard, Ownable {
         address indexed seller,
         address token,
         uint256 amount,
-        uint256 deliverBy
+        uint256 lockBlocks
     );
-    event OrderDelivered(bytes32 indexed orderId, uint256 disputeDeadline);
+    event OrderDelivered(bytes32 indexed orderId, uint256 deliveredAtBlock, uint256 unlockBlock);
     event OrderCompleted(bytes32 indexed orderId, uint256 sellerAmount, uint256 feeAmount);
     event OrderDisputed(bytes32 indexed orderId, address indexed buyer);
-    event OrderRefunded(bytes32 indexed orderId, uint256 buyerAmount);
+    event OrderInterrupted(bytes32 indexed orderId, string reason);
     event DisputeResolved(bytes32 indexed orderId, uint256 buyerRefund, uint256 sellerAmount, uint256 feeAmount);
+
+    event TokenWhitelisted(address indexed token, bool allowed);
     event ArbitratorUpdated(address indexed newArbitrator);
     event FeeUpdated(uint256 newFeeBps);
     event FeeRecipientUpdated(address indexed newFeeRecipient);
+    event LockBlocksUpdated(uint256 newLockBlocks);
+    event TokensRescued(address indexed token, address indexed to, uint256 amount);
 
     // ─── Errors ───────────────────────────────────────────────────────────────
 
@@ -84,8 +87,9 @@ contract AgentEscrow is ReentrancyGuard, Ownable {
     error OrderNotFound();
     error InvalidStatus(OrderStatus current);
     error Unauthorized();
-    error DisputeWindowStillOpen();
-    error DisputeWindowExpired();
+    error TokenNotWhitelisted(address token);
+    error LockStillActive();
+    error LockExpired();
     error ZeroAmount();
     error FeeTooHigh();
     error InvalidAddress();
@@ -93,38 +97,53 @@ contract AgentEscrow is ReentrancyGuard, Ownable {
 
     // ─── Constructor ──────────────────────────────────────────────────────────
 
-    constructor(address _feeRecipient, address _arbitrator, uint256 _feeBps) Ownable(msg.sender) {
+    /**
+     * @param _feeRecipient   手续费接收地址
+     * @param _arbitrator     仲裁者地址（单签）
+     * @param _feeBps         初始费率（基点），通常传 0
+     * @param _initialToken   初始白名单 Token（XLayer USDT）
+     */
+    constructor(
+        address _feeRecipient,
+        address _arbitrator,
+        uint256 _feeBps,
+        address _initialToken
+    ) Ownable(msg.sender) {
         if (_feeRecipient == address(0) || _arbitrator == address(0)) revert InvalidAddress();
         if (_feeBps > MAX_FEE_BPS) revert FeeTooHigh();
         feeRecipient = _feeRecipient;
         arbitrator = _arbitrator;
         feeBps = _feeBps;
+
+        if (_initialToken != address(0)) {
+            whitelistedTokens[_initialToken] = true;
+            emit TokenWhitelisted(_initialToken, true);
+        }
     }
 
     // ─── Buyer ────────────────────────────────────────────────────────────────
 
     /**
-     * @notice Create an order and deposit funds into escrow.
-     * @param orderId               Off-chain unique order ID (e.g. keccak256 of UUID string).
-     * @param seller                Seller's wallet address.
-     * @param token                 ERC-20 token to use (USDC address on target chain).
-     * @param amount                Gross amount to deposit (inclusive of platform fee).
-     * @param deliverBy             Delivery deadline (unix timestamp).
-     * @param disputeWindowSeconds  Override dispute window; pass 0 to use defaultDisputeWindow.
+     * @notice 买家创建订单并锁入 USDT。
+     * @param orderId      链下生成的唯一订单 ID（建议 keccak256(uuid)）
+     * @param seller       卖家地址
+     * @param token        支付 Token，必须在白名单中
+     * @param amount       金额
+     * @param lockBlocks   锁定区块数；传 0 使用 defaultLockBlocks
      */
     function createOrder(
         bytes32 orderId,
         address seller,
         address token,
         uint256 amount,
-        uint256 deliverBy,
-        uint256 disputeWindowSeconds
+        uint256 lockBlocks
     ) external nonReentrant {
-        if (orders[orderId].buyer != address(0)) revert OrderAlreadyExists();
+        if (orders[orderId].status != OrderStatus.None) revert OrderAlreadyExists();
         if (amount == 0) revert ZeroAmount();
-        if (seller == address(0) || token == address(0)) revert InvalidAddress();
+        if (seller == address(0)) revert InvalidAddress();
+        if (!whitelistedTokens[token]) revert TokenNotWhitelisted(token);
 
-        uint256 window = disputeWindowSeconds == 0 ? defaultDisputeWindow : disputeWindowSeconds;
+        uint256 lock = lockBlocks == 0 ? defaultLockBlocks : lockBlocks;
         uint256 fee = (amount * feeBps) / 10_000;
 
         IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
@@ -135,18 +154,16 @@ contract AgentEscrow is ReentrancyGuard, Ownable {
             token: token,
             amount: amount,
             fee: fee,
-            deliverBy: deliverBy,
-            disputeWindow: window,
-            deliveredAt: 0,
+            lockBlocks: lock,
+            deliveredAtBlock: 0,
             status: OrderStatus.EscrowHeld
         });
 
-        emit OrderCreated(orderId, msg.sender, seller, token, amount, deliverBy);
+        emit OrderCreated(orderId, msg.sender, seller, token, amount, lock);
     }
 
     /**
-     * @notice Buyer confirms delivery and immediately releases funds to seller.
-     *         Can be called when status is EscrowHeld or Delivered.
+     * @notice 买家确认交付，立即放款给卖家（可在 EscrowHeld 或 Delivered 状态）。
      */
     function confirmDelivery(bytes32 orderId) external nonReentrant {
         Order storage order = _requireOrder(orderId);
@@ -158,13 +175,13 @@ contract AgentEscrow is ReentrancyGuard, Ownable {
     }
 
     /**
-     * @notice Buyer raises a dispute within the dispute window after delivery.
+     * @notice 买家在区块锁定窗口内发起纠纷。
      */
     function raiseDispute(bytes32 orderId) external {
         Order storage order = _requireOrder(orderId);
         if (order.buyer != msg.sender) revert Unauthorized();
         if (order.status != OrderStatus.Delivered) revert InvalidStatus(order.status);
-        if (block.timestamp > order.deliveredAt + order.disputeWindow) revert DisputeWindowExpired();
+        if (block.number > order.deliveredAtBlock + order.lockBlocks) revert LockExpired();
 
         order.status = OrderStatus.Disputed;
         emit OrderDisputed(orderId, msg.sender);
@@ -173,7 +190,7 @@ contract AgentEscrow is ReentrancyGuard, Ownable {
     // ─── Seller ───────────────────────────────────────────────────────────────
 
     /**
-     * @notice Seller marks the order as delivered, starting the dispute window.
+     * @notice 卖家标记已交付，开始区块倒计时。
      */
     function markDelivered(bytes32 orderId) external {
         Order storage order = _requireOrder(orderId);
@@ -181,32 +198,30 @@ contract AgentEscrow is ReentrancyGuard, Ownable {
         if (order.status != OrderStatus.EscrowHeld) revert InvalidStatus(order.status);
 
         order.status = OrderStatus.Delivered;
-        order.deliveredAt = block.timestamp;
-        emit OrderDelivered(orderId, block.timestamp + order.disputeWindow);
+        order.deliveredAtBlock = block.number;
+        emit OrderDelivered(orderId, block.number, block.number + order.lockBlocks);
     }
 
     // ─── Anyone ───────────────────────────────────────────────────────────────
 
     /**
-     * @notice Release funds to seller after dispute window expires without dispute.
-     *         Anyone can call this to trigger the auto-release (e.g. keeper bot).
+     * @notice 区块锁定到期且无纠纷时，任意人可触发放款（卖家/Keeper 都可）。
      */
     function autoRelease(bytes32 orderId) external nonReentrant {
         Order storage order = _requireOrder(orderId);
         if (order.status != OrderStatus.Delivered) revert InvalidStatus(order.status);
-        if (block.timestamp <= order.deliveredAt + order.disputeWindow) revert DisputeWindowStillOpen();
+        if (block.number <= order.deliveredAtBlock + order.lockBlocks) revert LockStillActive();
         _release(orderId, order);
     }
 
     // ─── Arbitrator ───────────────────────────────────────────────────────────
 
     /**
-     * @notice Resolve a disputed order.
-     * @param orderId        The disputed order.
-     * @param buyerRefundBps Percentage (bps) of gross amount returned to buyer (0–10000).
-     *                       10000 = full refund (fee waived).
-     *                       0     = full release to seller (fee charged).
-     *                       5000  = 50% back to buyer, 50% net to seller (fee charged).
+     * @notice 仲裁者解决纠纷。
+     * @param buyerRefundBps  返给买家的比例（基点）
+     *                        10000 = 全退（免手续费）
+     *                        0     = 全部放款给卖家（按净额）
+     *                        中间值 = 净额按比例分给买卖双方，平台收取手续费
      */
     function resolveDispute(bytes32 orderId, uint256 buyerRefundBps) external nonReentrant {
         if (msg.sender != arbitrator) revert Unauthorized();
@@ -218,12 +233,10 @@ contract AgentEscrow is ReentrancyGuard, Ownable {
         IERC20 token = IERC20(order.token);
 
         if (buyerRefundBps == 10_000) {
-            // Full refund: return gross amount to buyer, platform waives fee.
             order.status = OrderStatus.Refunded;
             token.safeTransfer(order.buyer, order.amount);
             emit DisputeResolved(orderId, order.amount, 0, 0);
         } else {
-            // Partial or no refund: platform fee is charged, net is split by ratio.
             order.status = OrderStatus.Completed;
             uint256 netAmount = order.amount - order.fee;
             uint256 buyerRefund = (netAmount * buyerRefundBps) / 10_000;
@@ -237,22 +250,40 @@ contract AgentEscrow is ReentrancyGuard, Ownable {
         }
     }
 
-    // ─── View ─────────────────────────────────────────────────────────────────
+    // ─── Owner-only ───────────────────────────────────────────────────────────
 
-    function getOrder(bytes32 orderId) external view returns (Order memory) {
-        return orders[orderId];
+    /**
+     * @notice 强制中断订单，资金冻结。可作用于 EscrowHeld/Delivered/Disputed。
+     *         中断后请通过 rescueTokens 手动处置资金。
+     */
+    function forceInterrupt(bytes32 orderId, string calldata reason) external onlyOwner {
+        Order storage order = _requireOrder(orderId);
+        if (
+            order.status != OrderStatus.EscrowHeld &&
+            order.status != OrderStatus.Delivered &&
+            order.status != OrderStatus.Disputed
+        ) {
+            revert InvalidStatus(order.status);
+        }
+        order.status = OrderStatus.Interrupted;
+        emit OrderInterrupted(orderId, reason);
     }
 
     /**
-     * @notice Returns true if the dispute window for a Delivered order has expired.
+     * @notice 紧急救援：Owner 提取合约内任意 ERC-20 余额到指定地址。
+     *         典型用途：处置 Interrupted 订单的资金、回收误转入合约的代币。
      */
-    function isDisputeWindowExpired(bytes32 orderId) external view returns (bool) {
-        Order storage order = orders[orderId];
-        if (order.deliveredAt == 0) return false;
-        return block.timestamp > order.deliveredAt + order.disputeWindow;
+    function rescueTokens(address token, address to, uint256 amount) external onlyOwner nonReentrant {
+        if (to == address(0)) revert InvalidAddress();
+        IERC20(token).safeTransfer(to, amount);
+        emit TokensRescued(token, to, amount);
     }
 
-    // ─── Admin ────────────────────────────────────────────────────────────────
+    function setTokenWhitelist(address token, bool allowed) external onlyOwner {
+        if (token == address(0)) revert InvalidAddress();
+        whitelistedTokens[token] = allowed;
+        emit TokenWhitelisted(token, allowed);
+    }
 
     function setArbitrator(address _arbitrator) external onlyOwner {
         if (_arbitrator == address(0)) revert InvalidAddress();
@@ -272,15 +303,36 @@ contract AgentEscrow is ReentrancyGuard, Ownable {
         emit FeeRecipientUpdated(_feeRecipient);
     }
 
-    function setDefaultDisputeWindow(uint256 seconds_) external onlyOwner {
-        defaultDisputeWindow = seconds_;
+    function setDefaultLockBlocks(uint256 _lockBlocks) external onlyOwner {
+        defaultLockBlocks = _lockBlocks;
+        emit LockBlocksUpdated(_lockBlocks);
+    }
+
+    // ─── Views ────────────────────────────────────────────────────────────────
+
+    function getOrder(bytes32 orderId) external view returns (Order memory) {
+        return orders[orderId];
+    }
+
+    /// @notice 当前是否可以调用 autoRelease。
+    function isReleasable(bytes32 orderId) external view returns (bool) {
+        Order storage order = orders[orderId];
+        if (order.status != OrderStatus.Delivered) return false;
+        return block.number > order.deliveredAtBlock + order.lockBlocks;
+    }
+
+    /// @notice 是否仍处于纠纷窗口内（可以 raiseDispute）。
+    function isInDisputeWindow(bytes32 orderId) external view returns (bool) {
+        Order storage order = orders[orderId];
+        if (order.status != OrderStatus.Delivered) return false;
+        return block.number <= order.deliveredAtBlock + order.lockBlocks;
     }
 
     // ─── Internal ─────────────────────────────────────────────────────────────
 
     function _requireOrder(bytes32 orderId) internal view returns (Order storage order) {
         order = orders[orderId];
-        if (order.buyer == address(0)) revert OrderNotFound();
+        if (order.status == OrderStatus.None) revert OrderNotFound();
     }
 
     function _release(bytes32 orderId, Order storage order) internal {

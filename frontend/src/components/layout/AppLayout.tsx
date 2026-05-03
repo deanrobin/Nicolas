@@ -1,7 +1,7 @@
 import { Layout, Menu, Avatar, Dropdown, Typography, Button, Space, Tag } from 'antd'
 import {
-  HomeOutlined,
-  SettingOutlined,
+  AppstoreOutlined,
+  ShoppingOutlined,
   LogoutOutlined,
   WalletOutlined,
   UserOutlined,
@@ -23,7 +23,8 @@ export default function AppLayout() {
   }
 
   const navItems = [
-    { key: '/', icon: <HomeOutlined />, label: 'Marketplace' },
+    { key: '/', icon: <AppstoreOutlined />, label: 'Agent Market' },
+    { key: '/skills', icon: <ShoppingOutlined />, label: 'Skill Market' },
   ]
 
   const dropdownItems = {

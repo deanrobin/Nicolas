@@ -7,6 +7,7 @@ import RegisterPage from './pages/RegisterPage'
 import VerifyEmailPage from './pages/VerifyEmailPage'
 import OnboardingPage from './pages/OnboardingPage'
 import HomePage from './pages/HomePage'
+import SkillsPage from './pages/SkillsPage'
 import WalletPage from './pages/settings/WalletPage'
 
 const theme = {
@@ -37,6 +38,7 @@ export default function App() {
               element={<AuthGuard><AppLayout /></AuthGuard>}
             >
               <Route path="/" element={<HomePage />} />
+              <Route path="/skills" element={<SkillsPage />} />
               <Route path="/settings/wallet" element={<WalletPage />} />
             </Route>
 

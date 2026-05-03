@@ -10,7 +10,6 @@ import { useAuthStore } from '../store/authStore'
 
 const { Title, Text, Paragraph } = Typography
 
-// ── Mock demo data ────────────────────────────────────────────────────────
 const DEMO_AGENTS = [
   {
     id: 'moon-tarot',
@@ -81,26 +80,41 @@ const DEMO_AGENTS = [
 ]
 
 export default function HomePage() {
-  const { hasWallet, user } = useAuthStore()
+  const { hasWallet } = useAuthStore()
   const navigate = useNavigate()
 
   return (
     <div>
       {/* Hero banner */}
       <div style={styles.hero}>
-        <div style={{ maxWidth: 680 }}>
-          <Title style={{ color: '#fff', fontSize: 40, marginBottom: 12 }}>
-            Nicolas
-          </Title>
-          <Paragraph style={{ color: 'rgba(255,255,255,0.8)', fontSize: 18, marginBottom: 32 }}>
-            Discover AI agents, pay per result, protected by smart contract escrow.
-            <br />No subscriptions. No API keys. Pay once, get results.
-          </Paragraph>
-          <Space size="middle">
-            <Tag icon={<ThunderboltOutlined />} color="purple">x402 Payments</Tag>
-            <Tag icon={<SafetyCertificateOutlined />} color="blue">Escrow Protected</Tag>
-            <Tag icon={<StarFilled />} color="gold">Verified Agents</Tag>
-          </Space>
+        <div style={styles.heroOverlay} />
+        <div style={styles.heroContent}>
+          <div style={{ maxWidth: 760 }}>
+            <div style={styles.heroBadge}>
+              ✦ 致敬 Nicolas Flamel · 14 世纪炼金大师 ✦
+            </div>
+            <Title style={styles.heroTitle}>
+              让 AI 创造价值
+              <br />
+              <span style={{ color: '#ffd17a' }}>引领 Agent / Skill 市场</span>
+            </Title>
+            <Paragraph style={styles.heroSubtitle}>
+              在 Nicolas，开发者出售 Agent 调用与 Skill 授权，
+              <br />
+              用户按需付费、链上托管，全流程由智能合约保护。
+            </Paragraph>
+            <Space size="middle">
+              <Tag icon={<ThunderboltOutlined />} color="purple" style={styles.heroTag}>
+                Agent · 按次付费
+              </Tag>
+              <Tag icon={<StarFilled />} color="gold" style={styles.heroTag}>
+                Skill · 一次买断
+              </Tag>
+              <Tag icon={<SafetyCertificateOutlined />} color="blue" style={styles.heroTag}>
+                XLayer Escrow
+              </Tag>
+            </Space>
+          </div>
         </div>
       </div>
 
@@ -122,20 +136,18 @@ export default function HomePage() {
 
       {/* Agent grid */}
       <div style={{ padding: '32px 24px' }}>
-        <Title level={4} style={{ marginBottom: 24 }}>
-          Featured Agents
-          <Badge count={DEMO_AGENTS.length} style={{ marginLeft: 12, background: '#667eea' }} />
-        </Title>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 24 }}>
+          <Title level={4} style={{ margin: 0 }}>
+            Agent Market
+            <Badge count={DEMO_AGENTS.length} style={{ marginLeft: 12, background: '#667eea' }} />
+          </Title>
+          <Tag color="purple" style={{ marginLeft: 12 }}>按次付费</Tag>
+        </div>
 
         <Row gutter={[20, 20]}>
           {DEMO_AGENTS.map((agent) => (
             <Col xs={24} sm={12} lg={8} key={agent.id}>
-              <Card
-                hoverable
-                style={styles.agentCard}
-                bodyStyle={{ padding: 0 }}
-              >
-                {/* Card header */}
+              <Card hoverable style={styles.agentCard} bodyStyle={{ padding: 0 }}>
                 <div style={{ ...styles.cardHeader, background: `linear-gradient(135deg, ${agent.color}33, ${agent.color}11)` }}>
                   <div style={{ ...styles.agentAvatar, background: `linear-gradient(135deg, ${agent.color}, ${agent.color}99)` }}>
                     {agent.name[0]}
@@ -146,13 +158,8 @@ export default function HomePage() {
                   </div>
                 </div>
 
-                {/* Card body */}
                 <div style={{ padding: '16px 20px' }}>
-                  <Paragraph
-                    type="secondary"
-                    style={{ marginBottom: 12, fontSize: 13 }}
-                    ellipsis={{ rows: 2 }}
-                  >
+                  <Paragraph type="secondary" style={{ marginBottom: 12, fontSize: 13 }} ellipsis={{ rows: 2 }}>
                     {agent.desc}
                   </Paragraph>
 
@@ -191,11 +198,86 @@ export default function HomePage() {
   )
 }
 
+// 内嵌 SVG 几何/炼金意象作为背景纹理（无需外部图片资源）
+const HERO_BG = `url("data:image/svg+xml;utf8,${encodeURIComponent(`
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1600 600'>
+  <defs>
+    <radialGradient id='g1' cx='30%' cy='40%' r='50%'>
+      <stop offset='0%' stop-color='%23ffd17a' stop-opacity='0.25'/>
+      <stop offset='100%' stop-color='%23ffd17a' stop-opacity='0'/>
+    </radialGradient>
+    <radialGradient id='g2' cx='75%' cy='65%' r='55%'>
+      <stop offset='0%' stop-color='%23764ba2' stop-opacity='0.45'/>
+      <stop offset='100%' stop-color='%23764ba2' stop-opacity='0'/>
+    </radialGradient>
+  </defs>
+  <rect width='1600' height='600' fill='url(%23g1)'/>
+  <rect width='1600' height='600' fill='url(%23g2)'/>
+  <g stroke='rgba(255,209,122,0.35)' stroke-width='1' fill='none'>
+    <circle cx='1200' cy='300' r='180'/>
+    <circle cx='1200' cy='300' r='130'/>
+    <polygon points='1200,140 1356,390 1044,390'/>
+    <polygon points='1200,460 1044,210 1356,210'/>
+    <line x1='1020' y1='300' x2='1380' y2='300'/>
+    <line x1='1200' y1='120' x2='1200' y2='480'/>
+  </g>
+  <g stroke='rgba(102,126,234,0.25)' stroke-width='1' fill='none'>
+    <circle cx='280' cy='480' r='90'/>
+    <circle cx='280' cy='480' r='60'/>
+    <circle cx='280' cy='480' r='30'/>
+  </g>
+</svg>`)}")`
+
 const styles = {
   hero: {
-    background: 'linear-gradient(135deg, #0f0c29, #302b63)',
-    padding: '60px 32px',
-    marginBottom: 0,
+    position: 'relative' as const,
+    background: 'linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%)',
+    backgroundImage: `${HERO_BG}, linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%)`,
+    backgroundSize: 'cover, cover',
+    backgroundPosition: 'center, center',
+    padding: '80px 32px',
+    overflow: 'hidden',
+  } as React.CSSProperties,
+  heroOverlay: {
+    position: 'absolute' as const,
+    inset: 0,
+    background:
+      'radial-gradient(ellipse at top right, rgba(255,209,122,0.12), transparent 60%), radial-gradient(ellipse at bottom left, rgba(102,126,234,0.18), transparent 60%)',
+    pointerEvents: 'none' as const,
+  } as React.CSSProperties,
+  heroContent: {
+    position: 'relative' as const,
+    zIndex: 1,
+  } as React.CSSProperties,
+  heroBadge: {
+    display: 'inline-block',
+    color: '#ffd17a',
+    fontSize: 13,
+    letterSpacing: 2,
+    border: '1px solid rgba(255,209,122,0.35)',
+    padding: '6px 14px',
+    borderRadius: 999,
+    marginBottom: 20,
+    background: 'rgba(255,209,122,0.05)',
+  } as React.CSSProperties,
+  heroTitle: {
+    color: '#fff',
+    fontSize: 48,
+    lineHeight: 1.2,
+    marginBottom: 16,
+    fontWeight: 800,
+    letterSpacing: 1,
+  } as React.CSSProperties,
+  heroSubtitle: {
+    color: 'rgba(255,255,255,0.78)',
+    fontSize: 17,
+    marginBottom: 28,
+    lineHeight: 1.7,
+  } as React.CSSProperties,
+  heroTag: {
+    fontSize: 13,
+    padding: '4px 12px',
+    borderRadius: 999,
   } as React.CSSProperties,
   notice: {
     background: '#fffbe6',

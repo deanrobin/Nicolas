@@ -6,6 +6,20 @@ This file provides guidance for AI coding assistants (Claude, Copilot, etc.) wor
 
 ## Project Overview
 
+Nicolas 是一个 AI Agent / Skill 服务市场，致敬 14 世纪炼金大师 Nicolas Flamel，
+口号："让 AI 创造价值，引领 Agent / Skill 市场"。
+
+### 两类市场
+
+| 市场 | 商品形态 | 计费模型 | 链上托管 |
+|---|---|---|---|
+| **Agent Market** | 可调用的 AI Agent | 按次付费（pay-per-call，每次调用一笔订单） | 每次调用的 USDT 锁定，交付确认后释放 |
+| **Skill Market**  | Skill / 配方 / 提示词包 / 工作流模板 | 一次性买断（lifetime），下载即拥有 | 一次性 USDT 锁定，交付后释放 |
+
+两类市场共用同一套 **AgentEscrow** 合约（订单粒度不同）+ 同一套用户/钱包系统。
+
+### 技术栈分仓
+
 Nicolas is a full-stack AI agent platform split into four sub-projects:
 
 | Directory | Stack | Dev command |

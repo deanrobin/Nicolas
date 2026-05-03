@@ -2,19 +2,59 @@ spring:
   application:
     name: nicolas-backend
 
+  # ── MySQL ───────────────────────────────────────────────────────────────
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/nicolas?useUnicode=true&characterEncoding=utf8&serverTimezone=UTC&useSSL=false&allowPublicKeyRetrieval=true}
+    username: ${DB_USER:root}
+    password: ${DB_PASS:root}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update          # auto-create/alter tables; use validate in prod
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+        format_sql: true
+
+  # ── Mail ────────────────────────────────────────────────────────────────
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USER:}
+    password: ${MAIL_PASS:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
 server:
   port: 8080
   error:
     include-message: always
     include-binding-errors: always
 
-# URL of the Python FastAPI backend.
-# Override via environment variable: PYTHON_BACKEND_URL=http://...
+# ── Python backend ──────────────────────────────────────────────────────
 python:
   backend:
     url: ${PYTHON_BACKEND_URL:http://localhost:8000}
 
-# Spring Boot Actuator (internal health / metrics)
+# ── JWT ─────────────────────────────────────────────────────────────────
+jwt:
+  secret: ${JWT_SECRET:nicolas-default-secret-key-change-in-production-must-be-256bit}
+  expiration-days: ${JWT_EXPIRATION_DAYS:7}
+
+# ── App ─────────────────────────────────────────────────────────────────
+app:
+  mail:
+    from: ${MAIL_FROM:noreply@agents-bazaar.xyz}
+    # Set to true in dev to print verification code to log instead of sending email
+    dev-mode: ${MAIL_DEV_MODE:true}
+
+# ── Actuator ────────────────────────────────────────────────────────────
 management:
   endpoints:
     web:
@@ -24,7 +64,7 @@ management:
     health:
       show-details: always
 
-# Logging
+# ── Logging ─────────────────────────────────────────────────────────────
 logging:
   level:
     root: INFO

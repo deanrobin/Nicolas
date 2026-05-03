@@ -17,6 +17,23 @@ Nicolas is a full-stack AI agent platform split into four sub-projects:
 
 ---
 
+## 强制规则（所有人 / AI 必须遵守）
+
+### 分支管理
+- **禁止直接提交到 `master` 分支。** 所有代码改动必须在独立子分支上开发，再通过 Pull Request 合并。
+- 分支命名建议：`feat/xxx`、`fix/xxx`、`chore/xxx`。
+- 紧急热修复使用 `hotfix/xxx` 分支，同样不得跳过 PR 流程。
+
+### 安全 / 敏感信息
+- **禁止在代码或配置文件中出现明文密码、API Key、私钥、Token、Secret 等敏感字段。**
+- 所有密钥、密码一律通过**环境变量**注入，代码中只写占位符（如 `${JWT_SECRET}`）。
+- 以下文件类型包含敏感信息，**不得上传到 Git**（已在 `.gitignore` 中排除）：
+  - `.env`、`.env.*`、`application-prod.yml`、`application-local.yml`
+  - `secrets.yaml`、`secrets.json`、`*.key`、`*.pem`、`*.p12`、`*.jks`
+- 提交前执行自查：`git diff --cached` 确认没有明文密钥。
+
+---
+
 ## Key Conventions
 
 ### General

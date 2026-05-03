@@ -71,3 +71,23 @@ yarn-error.log*
 .env.local
 secrets.yaml
 secrets.json
+
+# ── 敏感信息 / 密钥 / 配置（严禁上传）────────────────────────────────────
+.env.production
+.env.staging
+application-local.yml
+application-local.yaml
+application-prod.yml
+application-prod.yaml
+application-production.yml
+application-production.yaml
+*.key
+*.pem
+*.p12
+*.jks
+*.keystore
+*.pfx
+*_rsa
+*_rsa.pub
+*_ed25519
+*_ed25519.pub

@@ -7,11 +7,11 @@
 -- [2026-05-03] V001 初始化建库建表
 -- -----------------------------------------------------------------------------
 
-CREATE DATABASE IF NOT EXISTS agents_bazaar
+CREATE DATABASE IF NOT EXISTS nicolas
     DEFAULT CHARACTER SET utf8mb4
     DEFAULT COLLATE utf8mb4_unicode_ci;
 
-USE agents_bazaar;
+USE nicolas;
 
 -- 用户表
 CREATE TABLE IF NOT EXISTS users (

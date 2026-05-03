@@ -76,7 +76,8 @@ cd /home/ubuntu/Nicolas/backend/java
 mvn package -DskipTests
 
 # 测试能不能跑起来（先确认）
-DB_URL="jdbc:mysql://localhost:3306/nicolas?useUnicode=true&characterEncoding=utf8&serverTimezone=UTC&useSSL=false&allowPublicKeyRetrieval=true" \
+DB_HOST=localhost \
+DB_PORT=3306 \
 DB_USER=nicolas \
 DB_PASS=你的数据库密码 \
 JWT_SECRET=换成一个随机32位字符串 \
@@ -104,7 +105,8 @@ ExecStart=/usr/bin/java -jar /home/ubuntu/Nicolas/backend/java/target/nicolas-ba
 Restart=always
 RestartSec=5
 
-Environment=DB_URL=jdbc:mysql://localhost:3306/nicolas?useUnicode=true&characterEncoding=utf8&serverTimezone=UTC&useSSL=false&allowPublicKeyRetrieval=true
+Environment=DB_HOST=localhost
+Environment=DB_PORT=3306
 Environment=DB_USER=nicolas
 Environment=DB_PASS=你的数据库密码
 Environment=JWT_SECRET=换成一个随机32位字符串

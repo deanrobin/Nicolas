@@ -28,7 +28,8 @@ CREATE DATABASE nicolas CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ### 2. 设置环境变量
 
 ```bash
-export DB_URL="jdbc:mysql://localhost:3306/nicolas?useUnicode=true&characterEncoding=utf8&serverTimezone=UTC&useSSL=false&allowPublicKeyRetrieval=true"
+export DB_HOST=localhost
+export DB_PORT=3306
 export DB_USER=root
 export DB_PASS=root
 export JWT_SECRET=dev-secret-key-at-least-32-characters
@@ -59,7 +60,8 @@ java -jar target/nicolas-backend-0.1.0-SNAPSHOT.jar
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `DB_URL` | `jdbc:mysql://localhost:3306/nicolas?...` | MySQL 连接串 |
+| `DB_HOST` | `localhost` | MySQL 服务器地址 |
+| `DB_PORT` | `3306` | MySQL 端口 |
 | `DB_USER` | `root` | 数据库用户 |
 | `DB_PASS` | `root` | 数据库密码 |
 | `JWT_SECRET` | (弱默认) | ⚠️ 生产环境必须换成 32 位以上随机字符串 |

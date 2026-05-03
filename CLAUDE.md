@@ -143,6 +143,22 @@ Configuration is in `src/main/resources/application.yml`.
 
 ---
 
+## 数据库变更规范
+
+所有需要执行 SQL 的变更（建表、加字段、加索引、改默认值等）**必须**追加到：
+
+```
+backend/java/sql/migration.sql
+```
+
+**强制规则**：
+- 每次变更在文件**末尾追加**新块，块头格式：`-- [YYYY-MM-DD] V{序号} 说明`
+- **禁止修改或删除**文件中已有的内容
+- 变更与代码改动在**同一个 commit** 中提交
+- 序号从 001 开始，每次递增，不得跳号或重复
+
+---
+
 ## Common Pitfalls
 
 - **Missing `ANTHROPIC_API_KEY`**: Both the agent system and the Python backend need this env var. Export it before running.

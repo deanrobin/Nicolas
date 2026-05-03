@@ -4,7 +4,6 @@ import {
   ThunderboltOutlined,
   SafetyCertificateOutlined,
   WalletOutlined,
-  ShopOutlined,
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
@@ -104,7 +103,7 @@ export default function HomePage() {
               <br />
               用户按需付费、链上托管，全流程由智能合约保护。
             </Paragraph>
-            <Space size="middle" style={{ marginBottom: 28 }}>
+            <Space size="middle">
               <Tag icon={<ThunderboltOutlined />} color="purple" style={styles.heroTag}>
                 Agent · 按次付费
               </Tag>
@@ -115,24 +114,6 @@ export default function HomePage() {
                 XLayer Escrow
               </Tag>
             </Space>
-            <div>
-              <Button
-                size="large"
-                icon={<ShopOutlined />}
-                onClick={() => navigate('/seller/register')}
-                style={{
-                  background: 'linear-gradient(135deg, #ffd17a, #fa8c16)',
-                  border: 'none',
-                  color: '#1a0e2e',
-                  fontWeight: 600,
-                  height: 44,
-                  paddingInline: 22,
-                  borderRadius: 999,
-                }}
-              >
-                Become a Seller →
-              </Button>
-            </div>
           </div>
         </div>
       </div>

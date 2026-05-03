@@ -7,6 +7,15 @@ import { merchantApi } from '../../api/client'
 
 const { Title, Paragraph, Text } = Typography
 
+const Label = ({ zh, en }: { zh: string; en: string }) => (
+  <span>
+    <span style={{ fontWeight: 500 }}>{zh}</span>
+    <Text type="secondary" style={{ marginLeft: 8, fontWeight: 400, fontSize: 12 }}>
+      {en}
+    </Text>
+  </span>
+)
+
 export default function ListSkillPage() {
   const navigate = useNavigate()
   const { message } = AntApp.useApp()
@@ -23,10 +32,10 @@ export default function ListSkillPage() {
         downloadUrl: values.downloadUrl as string,
         tags: values.tags as string,
       })
-      message.success('Skill submitted! AI review in progress.')
+      message.success('提交成功！AI 审核进行中 / Submitted! AI review in progress.')
       navigate('/seller/dashboard')
     } catch (err: unknown) {
-      message.error(err instanceof Error ? err.message : 'Failed to submit')
+      message.error(err instanceof Error ? err.message : '提交失败 / Failed to submit')
     } finally {
       setSubmitting(false)
     }
@@ -36,52 +45,71 @@ export default function ListSkillPage() {
     <div style={{ maxWidth: 720, margin: '0 auto', padding: '32px 24px' }}>
       <Title level={3}>
         <ShoppingOutlined style={{ marginRight: 8 }} />
-        List a New Skill
+        上架 Skill <Text type="secondary" style={{ fontSize: 16 }}>· List a New Skill</Text>
       </Title>
       <Paragraph type="secondary" style={{ marginBottom: 24 }}>
         Skill 一次性买断。买家付款后链上托管 USDT，下载交付物后资金释放给你。
+        <br />
+        One-time purchase. USDT is escrowed on payment and released once the buyer downloads the deliverable.
       </Paragraph>
 
       <Alert
         type="info"
         showIcon
-        message="审核机制"
-        description="提交后默认 Pending，由 AI 审核员检查描述、定价、合规性。审核通过后立即上架。"
+        message="审核机制 / Review"
+        description="提交后默认 Pending，由 AI 审核员检查描述、定价、合规性。
+        Submissions default to Pending. AI reviewer checks description, pricing, compliance."
         style={{ marginBottom: 24 }}
       />
 
       <Card style={{ borderRadius: 16 }}>
         <Form layout="vertical" onFinish={onFinish}>
-          <Form.Item name="name" label="Skill Name" rules={[{ required: true }, { max: 100 }]}>
-            <Input size="large" placeholder="e.g. Pro Trading Prompt Pack" />
+          <Form.Item
+            name="name"
+            label={<Label zh="Skill 名称" en="Skill Name" />}
+            rules={[{ required: true }, { max: 100 }]}
+          >
+            <Input size="large" placeholder="量化交易提示词包 / Pro Trading Prompt Pack" />
           </Form.Item>
 
-          <Form.Item name="category" label="Category" rules={[{ required: true }]}>
+          <Form.Item
+            name="category"
+            label={<Label zh="分类" en="Category" />}
+            rules={[{ required: true }]}
+          >
             <Select
               size="large"
-              placeholder="Select category"
+              placeholder="请选择 / Select category"
               options={[
-                { label: 'Prompts / 提示词包', value: 'prompts' },
-                { label: 'Recipe / Agent 配方', value: 'recipe' },
-                { label: 'Workflow / 工作流', value: 'workflow' },
-                { label: 'Template / 模板', value: 'template' },
-                { label: 'Fine-tune / 微调', value: 'finetune' },
-                { label: 'RAG / 检索', value: 'rag' },
-                { label: 'Other', value: 'other' },
+                { label: '提示词包 / Prompts', value: 'prompts' },
+                { label: 'Agent 配方 / Recipe', value: 'recipe' },
+                { label: '工作流 / Workflow', value: 'workflow' },
+                { label: '模板 / Template', value: 'template' },
+                { label: '微调 / Fine-tune', value: 'finetune' },
+                { label: 'RAG 检索', value: 'rag' },
+                { label: '其他 / Other', value: 'other' },
               ]}
             />
           </Form.Item>
 
           <Form.Item
             name="description"
-            label="Description"
+            label={<Label zh="详细介绍" en="Description" />}
             rules={[{ required: true }, { max: 2000 }]}
-            extra={<Text type="secondary">详细说明交付内容、适用场景</Text>}
+            extra={
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                交付内容、适用场景 / What's included, what scenarios it applies to
+              </Text>
+            }
           >
-            <Input.TextArea rows={5} size="large" placeholder="What's included in this skill pack?" />
+            <Input.TextArea rows={5} size="large" placeholder="例如：80+ 加密货币交易提示词，覆盖技术面、链上、宏观……" />
           </Form.Item>
 
-          <Form.Item name="priceUsdt" label="Price (USDT, one-time)" rules={[{ required: true }]}>
+          <Form.Item
+            name="priceUsdt"
+            label={<Label zh="买断价格 (USDT)" en="Price (USDT, one-time)" />}
+            rules={[{ required: true }]}
+          >
             <InputNumber
               size="large"
               min={0.01}
@@ -94,20 +122,28 @@ export default function ListSkillPage() {
 
           <Form.Item
             name="downloadUrl"
-            label="Download URL"
-            extra={<Text type="secondary">买家付款后获取的交付物链接（demo 阶段可留空）</Text>}
+            label={<Label zh="交付物下载地址（选填）" en="Download URL (optional)" />}
+            extra={
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                买家付款后获取的下载链接，demo 阶段可留空 / Delivery URL after payment; can be empty for demo.
+              </Text>
+            }
           >
             <Input size="large" placeholder="https://example.com/skill-pack.zip" />
           </Form.Item>
 
-          <Form.Item name="tags" label="Tags" extra={<Text type="secondary">逗号分隔</Text>}>
+          <Form.Item
+            name="tags"
+            label={<Label zh="标签" en="Tags" />}
+            extra={<Text type="secondary" style={{ fontSize: 12 }}>逗号分隔 / Comma-separated</Text>}
+          >
             <Input size="large" placeholder="prompts, trading, lifetime" />
           </Form.Item>
 
           <Space>
-            <Button onClick={() => navigate('/seller/dashboard')}>Cancel</Button>
+            <Button onClick={() => navigate('/seller/dashboard')}>取消 / Cancel</Button>
             <Button type="primary" htmlType="submit" loading={submitting} size="large">
-              Submit for Review
+              提交审核 / Submit for Review
             </Button>
           </Space>
         </Form>

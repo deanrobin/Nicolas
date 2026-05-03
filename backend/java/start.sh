@@ -10,27 +10,36 @@ if [ ! -f "$JAR" ]; then
   exit 1
 fi
 
-# ── 环境变量（没有就用默认值，生产环境请提前 export 或写到 .env）────────────
-export DB_HOST="${DB_HOST:-localhost}"
-export DB_PORT="${DB_PORT:-3306}"
-export DB_USER="${DB_USER:-root}"
-export DB_PASS="${DB_PASS:-root}"
-export JWT_SECRET="${JWT_SECRET:-agents-bazaar-default-secret-change-in-production-256bit}"
-export JWT_EXPIRATION_DAYS="${JWT_EXPIRATION_DAYS:-7}"
-export SERVER_PORT="${SERVER_PORT:-8080}"
-export MAIL_DEV_MODE="${MAIL_DEV_MODE:-true}"
-export LOG_PATH="${LOG_PATH:-logs}"
+# ── 加载环境变量 ─────────────────────────────────────────────────────────
+if [ -f "env.sh" ]; then
+  echo "Loading env.sh ..."
+  # shellcheck disable=SC1091
+  source env.sh
+else
+  echo "WARN: env.sh not found, using defaults / current shell env"
+fi
 
-mkdir -p "$LOG_PATH"
+# ── 查找已运行的进程并 kill ───────────────────────────────────────────────
+echo "Checking for running instances ..."
+PIDS=$(pgrep -f "$JAR" || true)
+if [ -n "$PIDS" ]; then
+  echo "Killing old PIDs: $PIDS"
+  kill -9 $PIDS
+  sleep 1
+fi
 
+# ── 启动 (nohup 后台 + 丢弃日志) ──────────────────────────────────────────
 echo "==== Agents Bazaar — Java Start ===="
-echo "  DB   : $DB_HOST:$DB_PORT"
-echo "  Port : $SERVER_PORT"
-echo "  Logs : $LOG_PATH/agents-bazaar.log"
+echo "  DB   : ${DB_HOST:-localhost}:${DB_PORT:-3306}"
+echo "  Port : ${SERVER_PORT:-8080}"
 echo ""
 
-exec java \
-  -Xms256m -Xmx512m \
+nohup java \
   -Dfile.encoding=UTF-8 \
   -Duser.timezone=Asia/Shanghai \
-  -jar "$JAR"
+  -jar "$JAR" \
+  > /dev/null 2>&1 &
+
+NEW_PID=$!
+echo "Started PID: $NEW_PID"
+echo "Use 'ps -ef | grep $JAR' to verify."

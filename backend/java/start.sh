@@ -14,7 +14,7 @@ fi
 if [ -f "env.sh" ]; then
   echo "Loading env.sh ..."
   # shellcheck disable=SC1091
-  source env.sh
+  . ./env.sh
 else
   echo "WARN: env.sh not found, using defaults / current shell env"
 fi

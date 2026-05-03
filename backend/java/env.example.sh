@@ -9,6 +9,7 @@
 # ── 数据库 ────────────────────────────────────────────────────────────────
 export DB_HOST=127.0.0.1
 export DB_PORT=3306
+export DB_NAME=nicolas
 export DB_USER=your_db_user
 export DB_PASS=your_db_password
 

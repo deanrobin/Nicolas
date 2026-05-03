@@ -73,11 +73,11 @@ public final class AgentDTO {
         String format,
         Integer maxLength
     ) {
-        public String format() {
+        public String effectiveFormat() {
             return format != null ? format : "markdown";
         }
 
-        public int maxLength() {
+        public int effectiveMaxLength() {
             return maxLength != null ? maxLength : 500;
         }
     }

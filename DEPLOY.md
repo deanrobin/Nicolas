@@ -82,7 +82,7 @@ DB_USER=nicolas \
 DB_PASS=你的数据库密码 \
 JWT_SECRET=换成一个随机32位字符串 \
 MAIL_DEV_MODE=true \
-java -jar target/agents-bazaar-backend-0.1.0-SNAPSHOT.jar
+java -jar target/nicolas-backend-0.1.0-SNAPSHOT.jar
 ```
 
 看到 `Started NicolasApplication` 说明没问题，Ctrl+C 停掉，然后设置成后台服务：
@@ -101,7 +101,7 @@ After=network.target mysql.service
 [Service]
 User=ubuntu
 WorkingDirectory=/home/ubuntu/Nicolas/backend/java
-ExecStart=/usr/bin/java -jar /home/ubuntu/Nicolas/backend/java/target/agents-bazaar-backend-0.1.0-SNAPSHOT.jar
+ExecStart=/usr/bin/java -jar /home/ubuntu/Nicolas/backend/java/target/nicolas-backend-0.1.0-SNAPSHOT.jar
 Restart=always
 RestartSec=5
 
@@ -145,7 +145,7 @@ npm run build
 ## 第六步：配置 Nginx
 
 ```bash
-sudo nano /etc/nginx/sites-available/agents-bazaar
+sudo nano /etc/nginx/sites-available/nicolas
 ```
 
 粘贴：
@@ -175,7 +175,7 @@ server {
 
 ```bash
 # 启用配置
-sudo ln -s /etc/nginx/sites-available/agents-bazaar /etc/nginx/sites-enabled/
+sudo ln -s /etc/nginx/sites-available/nicolas /etc/nginx/sites-enabled/
 sudo nginx -t          # 检查语法
 sudo systemctl reload nginx
 ```

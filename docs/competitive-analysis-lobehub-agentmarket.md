@@ -636,7 +636,7 @@ Agent Marketplace
 建议叫：
 
 ```text
-Agents Bazaar
+Nicolas
 Agent 摊位市场
 带托管保障的 Agent 服务社区
 Escrow-protected Agent Service Bazaar

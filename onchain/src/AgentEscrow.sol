@@ -10,7 +10,7 @@ import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 
 /**
  * @title  AgentEscrow
- * @notice Agents Bazaar 中转/托管合约 — 部署在 XLayer。
+ * @notice Nicolas 中转/托管合约 — 部署在 XLayer。
  *
  *         设计要点：
  *           - 仅接收白名单 Token（默认 XLayer USDT，免 Gas 转账）

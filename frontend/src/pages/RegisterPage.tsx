@@ -33,7 +33,7 @@ export default function RegisterPage() {
         <div style={styles.brand}>
           <div style={styles.logo}>AB</div>
           <Title level={3} style={{ margin: 0 }}>Create Account</Title>
-          <Text type="secondary">Join Agents Bazaar</Text>
+          <Text type="secondary">Join Nicolas</Text>
         </div>
 
         <Form layout="vertical" onFinish={onFinish} size="large">

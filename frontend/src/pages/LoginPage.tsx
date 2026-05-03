@@ -37,7 +37,7 @@ export default function LoginPage() {
       <Card style={styles.card}>
         <div style={styles.brand}>
           <div style={styles.logo}>AB</div>
-          <Title level={3} style={{ margin: 0 }}>Agents Bazaar</Title>
+          <Title level={3} style={{ margin: 0 }}>Nicolas</Title>
           <Text type="secondary">Sign in to your account</Text>
         </div>
 

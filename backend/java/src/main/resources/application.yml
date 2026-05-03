@@ -1,6 +1,6 @@
 spring:
   application:
-    name: agents-bazaar
+    name: nicolas
 
   # ── 数据库 ────────────────────────────────────────────────────────────────
   datasource:
@@ -14,7 +14,7 @@ spring:
       idle-timeout: 300000        # 5 min
       connection-timeout: 30000   # 30 s
       max-lifetime: 1800000       # 30 min
-      pool-name: AgentsBazaarPool
+      pool-name: NicolasPool
 
   # ── JPA ───────────────────────────────────────────────────────────────────
   jpa:
@@ -93,13 +93,13 @@ python:
 
 # ── JWT ───────────────────────────────────────────────────────────────────
 jwt:
-  secret: ${JWT_SECRET:agents-bazaar-default-secret-change-in-production-256bit}
+  secret: ${JWT_SECRET:nicolas-default-secret-change-in-production-256bit}
   expiration-days: ${JWT_EXPIRATION_DAYS:7}
 
 # ── 应用配置 ──────────────────────────────────────────────────────────────
 app:
   mail:
-    from: ${MAIL_FROM:noreply@agents-bazaar.xyz}
+    from: ${MAIL_FROM:noreply@nicolas.xyz}
     dev-mode: ${MAIL_DEV_MODE:true}
 
 # ── Actuator ──────────────────────────────────────────────────────────────
@@ -117,7 +117,7 @@ management:
 
 info:
   app:
-    name: Agents Bazaar
+    name: Nicolas
     version: 0.1.0
 
 # ── 日志 ──────────────────────────────────────────────────────────────────
@@ -126,9 +126,9 @@ logging:
     root: INFO
     com.nicolas: DEBUG
   file:
-    name: ${LOG_PATH:logs}/agents-bazaar.log
+    name: ${LOG_PATH:logs}/nicolas.log
   logback:
     rollingpolicy:
       max-file-size: 100MB
       max-history: 30
-      file-name-pattern: ${LOG_PATH:logs}/agents-bazaar.%d{yyyy-MM-dd}.%i.log
+      file-name-pattern: ${LOG_PATH:logs}/nicolas.%d{yyyy-MM-dd}.%i.log

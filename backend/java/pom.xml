@@ -13,10 +13,10 @@
     </parent>
 
     <groupId>com.nicolas</groupId>
-    <artifactId>agents-bazaar-backend</artifactId>
+    <artifactId>nicolas-backend</artifactId>
     <version>0.1.0-SNAPSHOT</version>
-    <name>agents-bazaar-backend</name>
-    <description>Agents Bazaar — Spring Boot backend</description>
+    <name>nicolas-backend</name>
+    <description>Nicolas — Spring Boot backend</description>
     <packaging>jar</packaging>
 
     <properties>

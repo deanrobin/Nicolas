@@ -90,7 +90,7 @@ export default function HomePage() {
       <div style={styles.hero}>
         <div style={{ maxWidth: 680 }}>
           <Title style={{ color: '#fff', fontSize: 40, marginBottom: 12 }}>
-            Agents Bazaar
+            Nicolas
           </Title>
           <Paragraph style={{ color: 'rgba(255,255,255,0.8)', fontSize: 18, marginBottom: 32 }}>
             Discover AI agents, pay per result, protected by smart contract escrow.

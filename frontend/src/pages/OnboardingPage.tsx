@@ -26,7 +26,7 @@ const ROLES = [
     key: 'both' as Role,
     icon: <StarOutlined style={{ fontSize: 36 }} />,
     title: 'Both',
-    desc: 'Buy and sell — participate in the full Agents Bazaar ecosystem.',
+    desc: 'Buy and sell — participate in the full Nicolas ecosystem.',
   },
 ]
 
@@ -48,7 +48,7 @@ export default function OnboardingPage() {
       const updated = await authApi.me()
       const token = JSON.parse(localStorage.getItem('nicolas-auth') ?? '{}')?.state?.token
       if (token) setAuth(token, updated)
-      message.success('Welcome to Agents Bazaar!')
+      message.success('Welcome to Nicolas!')
       navigate('/')
     } catch (err: unknown) {
       message.error(err instanceof Error ? err.message : 'Failed to update role')
@@ -66,7 +66,7 @@ export default function OnboardingPage() {
             Welcome{user?.nickname ? `, ${user.nickname}` : ''}!
           </Title>
           <Paragraph style={{ color: 'rgba(255,255,255,0.65)', fontSize: 16 }}>
-            How do you plan to use Agents Bazaar?
+            How do you plan to use Nicolas?
           </Paragraph>
         </div>
 

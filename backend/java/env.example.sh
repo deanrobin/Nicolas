@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Agents Bazaar — 环境变量配置模板
+# Nicolas — 环境变量配置模板
 # 使用方法：
 #   cp env.example.sh env.sh   # 复制一份
 #   vim env.sh                 # 填写真实值
@@ -24,7 +24,7 @@ export MAIL_HOST=smtp.gmail.com
 export MAIL_PORT=587
 export MAIL_USER=your_email@gmail.com
 export MAIL_PASS=your_smtp_app_password
-export MAIL_FROM=noreply@agents-bazaar.xyz
+export MAIL_FROM=noreply@nicolas.xyz
 # true = 不发真实邮件，验证码打印到日志（本地开发用）
 export MAIL_DEV_MODE=true
 
@@ -37,7 +37,7 @@ export PYTHON_BACKEND_URL=http://localhost:8000
 # ── 日志路径 ──────────────────────────────────────────────────────────────
 export LOG_PATH=/root/Nicolas/backend/java/logs
 
-echo "✓ Agents Bazaar 环境变量已加载"
+echo "✓ Nicolas 环境变量已加载"
 echo "  DB:   ${DB_USER}@${DB_HOST}:${DB_PORT}"
 echo "  PORT: ${SERVER_PORT}"
 echo "  MAIL_DEV_MODE: ${MAIL_DEV_MODE}"

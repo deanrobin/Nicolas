@@ -1,113 +1,94 @@
-/**
- * API client for the Nicolas backend (Java Spring Boot, port 8080).
- * During development, Vite proxies /api/* to the Spring Boot backend.
- */
+import type {
+  ApiResponse,
+  AuthResponse,
+  AuthUser,
+  UserWallet,
+  WalletNonceResponse,
+} from '../types/api'
 
-const BASE_URL = import.meta.env.VITE_API_URL ?? ''
+const BASE = '/api'
 
-export interface Agent {
-  name: string
-  description: string
-}
+// ── Core fetch wrapper ────────────────────────────────────────────────────
 
-export interface ChatMessage {
-  role: 'user' | 'assistant'
-  content: string
-}
-
-export interface ChatRequest {
-  message: string
-  history: ChatMessage[]
-}
-
-export interface ChatResponse {
-  reply: string
-  agentName: string
-}
-
-export interface ReportRequest {
-  topic: string
-  format?: 'text' | 'markdown'
-}
-
-export interface ReportResponse {
-  title: string
-  content: string
-  generatedAt: string
-}
-
-export interface HealthResponse {
-  status: string
-  timestamp: string
-  services: Record<string, string>
-}
-
-class ApiClient {
-  private readonly baseUrl: string
-
-  constructor(baseUrl: string) {
-    this.baseUrl = baseUrl
+async function request<T>(
+  path: string,
+  options: RequestInit = {},
+): Promise<T> {
+  const token = getToken()
+  const res = await fetch(`${BASE}${path}`, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...options.headers,
+    },
+    ...options,
+  })
+  const json: ApiResponse<T> = await res.json()
+  if (json.code !== 200) {
+    throw new Error(json.message || `Error ${json.code}`)
   }
+  return json.data
+}
 
-  private async request<T>(
-    path: string,
-    options: RequestInit = {},
-  ): Promise<T> {
-    const url = `${this.baseUrl}/api${path}`
-    const response = await fetch(url, {
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
-      ...options,
-    })
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      throw new Error(
-        `API error ${response.status} ${response.statusText}: ${errorText}`,
-      )
-    }
-
-    return response.json() as Promise<T>
+function getToken(): string | null {
+  try {
+    const raw = localStorage.getItem('nicolas-auth')
+    if (!raw) return null
+    return JSON.parse(raw)?.state?.token ?? null
+  } catch {
+    return null
   }
+}
 
-  /** List all available agents */
-  async listAgents(): Promise<Agent[]> {
-    return this.request<Agent[]>('/agents')
-  }
+// ── Auth ─────────────────────────────────────────────────────────────────
 
-  /** Get a single agent by name */
-  async getAgent(name: string): Promise<Agent> {
-    return this.request<Agent>(`/agents/${name}`)
-  }
-
-  /**
-   * Send a message to an agent and receive a reply.
-   * The conversation history is passed along to maintain context.
-   */
-  async chatWithAgent(
-    agentName: string,
-    body: ChatRequest,
-  ): Promise<ChatResponse> {
-    return this.request<ChatResponse>(`/agents/${agentName}/chat`, {
+export const authApi = {
+  register: (email: string, password: string, nickname: string) =>
+    request<null>('/auth/register', {
       method: 'POST',
-      body: JSON.stringify(body),
-    })
-  }
+      body: JSON.stringify({ email, password, nickname }),
+    }),
 
-  /** Generate a simple report on a topic */
-  async generateReport(body: ReportRequest): Promise<ReportResponse> {
-    return this.request<ReportResponse>('/reports', {
+  verifyEmail: (email: string, code: string) =>
+    request<null>('/auth/verify-email', {
       method: 'POST',
-      body: JSON.stringify(body),
-    })
-  }
+      body: JSON.stringify({ email, code }),
+    }),
 
-  /** Health check */
-  async health(): Promise<HealthResponse> {
-    return this.request<HealthResponse>('/health')
-  }
+  resendCode: (email: string) =>
+    request<null>('/auth/resend-code', {
+      method: 'POST',
+      body: JSON.stringify({ email, code: '' }),
+    }),
+
+  login: (email: string, password: string) =>
+    request<AuthResponse>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    }),
+
+  me: () => request<AuthUser>('/auth/me'),
+
+  updateRole: (role: string) =>
+    request<null>('/auth/role', {
+      method: 'PUT',
+      body: JSON.stringify({ role }),
+    }),
 }
 
-export const apiClient = new ApiClient(BASE_URL)
+// ── Wallet ────────────────────────────────────────────────────────────────
+
+export const walletApi = {
+  getNonce: () => request<WalletNonceResponse>('/wallet/nonce'),
+
+  bind: (address: string, signature: string) =>
+    request<UserWallet>('/wallet/bind', {
+      method: 'POST',
+      body: JSON.stringify({ address, signature }),
+    }),
+
+  getMyWallet: () => request<UserWallet>('/wallet/me'),
+
+  unbind: () =>
+    request<null>('/wallet/unbind', { method: 'DELETE' }),
+}

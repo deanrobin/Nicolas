@@ -1,7 +1,14 @@
 import type {
+  AgentListing,
+  AgentListingRequest,
   ApiResponse,
   AuthResponse,
   AuthUser,
+  Merchant,
+  MerchantRegisterRequest,
+  MyListings,
+  SkillListing,
+  SkillListingRequest,
   UserWallet,
   WalletNonceResponse,
 } from '../types/api'
@@ -91,4 +98,30 @@ export const walletApi = {
 
   unbind: () =>
     request<null>('/wallet/unbind', { method: 'DELETE' }),
+}
+
+// ── Merchant ──────────────────────────────────────────────────────────────
+
+export const merchantApi = {
+  register: (req: MerchantRegisterRequest) =>
+    request<Merchant>('/merchant/register', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    }),
+
+  me: () => request<Merchant>('/merchant/me'),
+
+  listAgent: (req: AgentListingRequest) =>
+    request<AgentListing>('/merchant/agents', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    }),
+
+  listSkill: (req: SkillListingRequest) =>
+    request<SkillListing>('/merchant/skills', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    }),
+
+  myListings: () => request<MyListings>('/merchant/listings'),
 }

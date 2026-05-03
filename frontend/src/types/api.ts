@@ -32,6 +32,87 @@ export interface UserWallet {
   boundAt: string
 }
 
+// ── Merchant / Listings ──────────────────────────────────────────────────
+export type ReviewStatus = 'pending' | 'approved' | 'rejected'
+
+export interface Merchant {
+  id: number
+  userId: number
+  brandName: string
+  description: string | null
+  contactEmail: string | null
+  website: string | null
+  category: string | null
+  status: ReviewStatus
+  reviewReason: string | null
+  reviewedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface AgentListing {
+  id: number
+  merchantId: number
+  name: string
+  description: string
+  category: string | null
+  priceUsdt: string
+  apiEndpoint: string | null
+  tags: string | null
+  status: ReviewStatus
+  reviewReason: string | null
+  reviewedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface SkillListing {
+  id: number
+  merchantId: number
+  name: string
+  description: string
+  category: string | null
+  priceUsdt: string
+  downloadUrl: string | null
+  tags: string | null
+  status: ReviewStatus
+  reviewReason: string | null
+  reviewedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface MerchantRegisterRequest {
+  brandName: string
+  description?: string
+  contactEmail?: string
+  website?: string
+  category?: string
+}
+
+export interface AgentListingRequest {
+  name: string
+  description: string
+  category?: string
+  priceUsdt: string | number
+  apiEndpoint?: string
+  tags?: string
+}
+
+export interface SkillListingRequest {
+  name: string
+  description: string
+  category?: string
+  priceUsdt: string | number
+  downloadUrl?: string
+  tags?: string
+}
+
+export interface MyListings {
+  agents: AgentListing[]
+  skills: SkillListing[]
+}
+
 // ── window.ethereum (EIP-1193) ────────────────────────────────────────────
 declare global {
   interface Window {

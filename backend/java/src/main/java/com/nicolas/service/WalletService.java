@@ -24,6 +24,9 @@ public class WalletService {
 
     private static final Logger log = LoggerFactory.getLogger(WalletService.class);
 
+    /** 必须与 WalletController#getNonce 返回给前端的 message 完全一致 */
+    public static final String SIGN_MESSAGE_PREFIX = "Sign this message to bind your wallet to Nicolas:\n";
+
     private final WalletNonceRepository nonceRepo;
     private final UserWalletRepository walletRepo;
 
@@ -35,7 +38,6 @@ public class WalletService {
 
     @Transactional
     public String generateNonce(Long userId) {
-        // Invalidate old nonces
         nonceRepo.markAllUsedByUser(userId);
 
         String nonce = UUID.randomUUID().toString().replace("-", "");
@@ -51,7 +53,6 @@ public class WalletService {
 
     @Transactional
     public UserWallet bindWallet(Long userId, String address, String signature) {
-        // 1. Load latest nonce
         WalletNonce wn = nonceRepo.findLatestUnused(userId)
                 .orElseThrow(() -> BizException.badRequest("No nonce found. Request a nonce first."));
 
@@ -59,27 +60,23 @@ public class WalletService {
             throw BizException.badRequest("Nonce expired. Please request a new one.");
         }
 
-        // 2. Verify EVM signature
         String recoveredAddress = recoverAddress(wn.getNonce(), signature);
         if (!recoveredAddress.equalsIgnoreCase(address)) {
+            log.warn("Signature mismatch: recovered={}, claimed={}", recoveredAddress, address);
             throw BizException.badRequest("Signature verification failed");
         }
 
-        // 3. Check address not bound to another account
         walletRepo.findByAddress(address.toLowerCase()).ifPresent(w -> {
             if (!w.getUserId().equals(userId)) {
                 throw BizException.conflict("This wallet address is already bound to another account");
             }
         });
 
-        // 4. Mark nonce used
         wn.setUsed(true);
         nonceRepo.save(wn);
 
-        // 5. Remove existing wallet binding for this user (re-bind)
         walletRepo.deleteByUserId(userId);
 
-        // 6. Save new binding
         UserWallet wallet = new UserWallet();
         wallet.setUserId(userId);
         wallet.setAddress(address.toLowerCase());
@@ -96,13 +93,10 @@ public class WalletService {
                 .orElseThrow(() -> BizException.notFound("No wallet bound to this account"));
     }
 
-    // ── EVM signature recovery ────────────────────────────────────────────
-
     private String recoverAddress(String nonce, String signature) {
         try {
-            // Ethereum personal_sign prefix
-            String message = "Ethereum Signed Message:\n" + nonce.length() + nonce;
-            byte[] messageBytes = message.getBytes(StandardCharsets.UTF_8);
+            // 前端用 personal_sign 签的就是这句完整提示，验签必须用同一份字节
+            String fullMessage = SIGN_MESSAGE_PREFIX + nonce;
 
             byte[] sigBytes = Numeric.hexStringToByteArray(signature);
             if (sigBytes.length != 65) {
@@ -112,10 +106,11 @@ public class WalletService {
             byte[] r = Arrays.copyOfRange(sigBytes, 0, 32);
             byte[] s = Arrays.copyOfRange(sigBytes, 32, 64);
             byte v = sigBytes[64];
-            if (v < 27) v += 27; // normalize v
+            if (v < 27) v += 27;
 
             Sign.SignatureData signatureData = new Sign.SignatureData(v, r, s);
-            BigInteger pubKey = Sign.signedPrefixedMessageToKey(nonce.getBytes(StandardCharsets.UTF_8), signatureData);
+            BigInteger pubKey = Sign.signedPrefixedMessageToKey(
+                    fullMessage.getBytes(StandardCharsets.UTF_8), signatureData);
             return "0x" + Keys.getAddress(pubKey);
         } catch (BizException e) {
             throw e;

@@ -1,5 +1,7 @@
-import { useState } from 'react'
-import { Card, Button, Typography, Alert, Descriptions, Space, Popconfirm, message, Tag } from 'antd'
+import { useEffect, useState } from 'react'
+import {
+  Card, Button, Typography, Alert, Space, Popconfirm, message, Tag, Input, Spin,
+} from 'antd'
 import {
   WalletOutlined,
   CheckCircleOutlined,
@@ -15,8 +17,28 @@ export default function WalletPage() {
   const { user, updateWallet } = useAuthStore()
   const [loading, setLoading] = useState(false)
   const [unbinding, setUnbinding] = useState(false)
+  const [fetching, setFetching] = useState(true)
 
   const walletAddress = user?.walletAddress
+
+  // 进页面拉一次后端绑定状态，确保刷新后地址也能显示
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const w = await walletApi.getMyWallet()
+        if (!cancelled) updateWallet(w?.address ?? null)
+      } catch {
+        if (!cancelled) updateWallet(null)
+      } finally {
+        if (!cancelled) setFetching(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleConnect = async () => {
     if (!window.ethereum) {
@@ -25,23 +47,19 @@ export default function WalletPage() {
     }
     setLoading(true)
     try {
-      // 1. Request accounts
       const accounts = (await window.ethereum.request({
         method: 'eth_requestAccounts',
       })) as string[]
       const address = accounts[0]
       if (!address) throw new Error('No account returned from wallet')
 
-      // 2. Get nonce from backend
       const { message: msg } = await walletApi.getNonce()
 
-      // 3. Sign the message
       const signature = (await window.ethereum.request({
         method: 'personal_sign',
         params: [msg, address],
       })) as string
 
-      // 4. Bind to backend
       const wallet = await walletApi.bind(address, signature)
       updateWallet(wallet.address)
       message.success('Wallet connected successfully!')
@@ -69,6 +87,14 @@ export default function WalletPage() {
     }
   }
 
+  if (fetching) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', padding: '64px 0' }}>
+        <Spin size="large" />
+      </div>
+    )
+  }
+
   return (
     <div style={{ maxWidth: 640, margin: '0 auto', padding: '32px 24px' }}>
       <Title level={3}>
@@ -81,28 +107,50 @@ export default function WalletPage() {
 
       {walletAddress ? (
         <Card style={{ borderRadius: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
             <CheckCircleOutlined style={{ fontSize: 24, color: '#52c41a' }} />
             <div>
               <Text strong style={{ display: 'block' }}>Wallet Connected</Text>
-              <Text type="secondary" style={{ fontSize: 12 }}>Your EVM address is bound to this account</Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                Your EVM address is bound to this account
+              </Text>
             </div>
             <Tag color="green" style={{ marginLeft: 'auto' }}>Active</Tag>
           </div>
 
-          <Descriptions column={1} size="small" style={{ marginBottom: 24 }}>
-            <Descriptions.Item label="Address">
-              <Text copyable code style={{ fontSize: 13 }}>
-                {walletAddress}
-              </Text>
-            </Descriptions.Item>
-            <Descriptions.Item label="Network">
-              <Text>XLayer (EVM)</Text>
-            </Descriptions.Item>
-            <Descriptions.Item label="Chain">
-              <Text>EVM-compatible</Text>
-            </Descriptions.Item>
-          </Descriptions>
+          <div style={{ marginBottom: 8 }}>
+            <Text type="secondary" style={{ fontSize: 12 }}>EVM Address</Text>
+          </div>
+          <Input
+            value={walletAddress}
+            readOnly
+            size="large"
+            style={{
+              fontFamily: 'monospace',
+              fontSize: 13,
+              background: '#fafafa',
+              cursor: 'text',
+              marginBottom: 20,
+            }}
+            onFocus={(e) => e.target.select()}
+            suffix={
+              <Button
+                type="text"
+                size="small"
+                onClick={() => {
+                  navigator.clipboard.writeText(walletAddress)
+                  message.success('Address copied')
+                }}
+              >
+                Copy
+              </Button>
+            }
+          />
+
+          <div style={{ marginBottom: 24 }}>
+            <Text type="secondary" style={{ fontSize: 12 }}>Network</Text>
+            <div><Text>XLayer (EVM-compatible)</Text></div>
+          </div>
 
           <Popconfirm
             title="Unbind wallet"

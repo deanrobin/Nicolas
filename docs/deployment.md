@@ -1,4 +1,4 @@
-# Agents Bazaar — 部署方案
+# Nicolas — 部署方案
 
 ## 一、本地开发（推荐先跑通）
 

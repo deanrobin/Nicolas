@@ -52,7 +52,7 @@ export default function AppLayout() {
         <div style={styles.brand} onClick={() => navigate('/')}>
           <div style={styles.logo}>AB</div>
           <Text strong style={{ color: '#fff', fontSize: 18 }}>
-            Agents Bazaar
+            Nicolas
           </Text>
         </div>
 

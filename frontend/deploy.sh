@@ -3,7 +3,7 @@ set -e
 
 cd "$(dirname "$0")"
 
-echo "==== Agents Bazaar — Frontend Deploy ===="
+echo "==== Nicolas — Frontend Deploy ===="
 
 # ── 开发模式：本地跑 Vite dev server ─────────────────────────────────────
 if [ "$1" = "dev" ]; then

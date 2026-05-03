@@ -3,7 +3,7 @@ set -e
 
 cd "$(dirname "$0")"
 
-JAR="target/agents-bazaar-backend-0.1.0-SNAPSHOT.jar"
+JAR="target/nicolas-backend-0.1.0-SNAPSHOT.jar"
 
 if [ ! -f "$JAR" ]; then
   echo "JAR not found. Run build.sh first."
@@ -29,7 +29,7 @@ if [ -n "$PIDS" ]; then
 fi
 
 # ── 启动 (nohup 后台 + 丢弃日志) ──────────────────────────────────────────
-echo "==== Agents Bazaar — Java Start ===="
+echo "==== Nicolas — Java Start ===="
 echo "  DB   : ${DB_HOST:-localhost}:${DB_PORT:-3306}"
 echo "  Port : ${SERVER_PORT:-8080}"
 echo ""

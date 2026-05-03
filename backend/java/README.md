@@ -53,7 +53,7 @@ mvn spring-boot:run
 mvn package -DskipTests
 
 # 运行 jar
-java -jar target/agents-bazaar-backend-0.1.0-SNAPSHOT.jar
+java -jar target/nicolas-backend-0.1.0-SNAPSHOT.jar
 ```
 
 ## 环境变量说明

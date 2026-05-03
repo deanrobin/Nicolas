@@ -32,7 +32,7 @@ public class EmailService {
         SimpleMailMessage msg = new SimpleMailMessage();
         msg.setFrom(from);
         msg.setTo(to);
-        msg.setSubject("Agents Bazaar — Email Verification");
+        msg.setSubject("Nicolas — Email Verification");
         msg.setText("Your verification code is: " + code + "\n\nExpires in 15 minutes.");
         mailSender.send(msg);
     }
@@ -45,9 +45,9 @@ public class EmailService {
         SimpleMailMessage msg = new SimpleMailMessage();
         msg.setFrom(from);
         msg.setTo(to);
-        msg.setSubject("Agents Bazaar — Password Reset");
+        msg.setSubject("Nicolas — Password Reset");
         msg.setText("Click the link below to reset your password:\n\n"
-                + "https://agents-bazaar.xyz/reset-password?token=" + resetToken
+                + "https://nicolas.xyz/reset-password?token=" + resetToken
                 + "\n\nThis link expires in 30 minutes.");
         mailSender.send(msg);
     }

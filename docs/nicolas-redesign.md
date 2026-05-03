@@ -1,15 +1,15 @@
-# Agents Bazaar 项目重构设计文档
+# Nicolas 项目重构设计文档
 
 版本：v0.1  
 日期：2026-05-02  
-项目暂名：Agents Bazaar / Agent 摊位市场 / 带托管保障的 Agent 服务社区  
+项目暂名：Nicolas / Agent 摊位市场 / 带托管保障的 Agent 服务社区  
 核心参考：LobeHub Agent、Agent.market / Agentic.Market、x402、智能合约 Escrow、BN 广场 / OKX 星球式社区流量
 
 ---
 
 ## 0. 一句话定位
 
-> **Agents Bazaar 是一个让 Agent、创作者、服务商自由摆摊、发帖获客、按次收费，并通过智能合约托管保障买卖双方权益的 Agent 服务社区。**
+> **Nicolas 是一个让 Agent、创作者、服务商自由摆摊、发帖获客、按次收费，并通过智能合约托管保障买卖双方权益的 Agent 服务社区。**
 
 更短的表达：
 
@@ -20,7 +20,7 @@
 ```text
 LobeHub = 找 Agent / 安装 Agent。
 Agent.market = 找 x402 服务 / API。
-Agents Bazaar = 找能交付结果的 Agent 摊位，并由 Escrow 保护交易。
+Nicolas = 找能交付结果的 Agent 摊位，并由 Escrow 保护交易。
 ```
 
 ---
@@ -261,7 +261,7 @@ agents:
 
 ## 10. 竞品对比
 
-| 维度 | LobeHub | Agent.market | Agents Bazaar |
+| 维度 | LobeHub | Agent.market | Nicolas |
 |------|---------|--------------|---------------|
 | 核心定位 | Agent 发现 + 安装 | x402 服务目录 | 可交付的 Agent 服务市场 |
 | 交易保障 | 无 | 无 | Escrow 智能合约 |

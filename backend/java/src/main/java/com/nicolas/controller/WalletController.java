@@ -29,7 +29,7 @@ public class WalletController {
     public ResponseEntity<ApiResponse<Map<String, String>>> getNonce(
             @AuthenticationPrincipal Long userId) {
         String nonce = walletService.generateNonce(userId);
-        String message = "Sign this message to bind your wallet to Agents Bazaar:\n" + nonce;
+        String message = "Sign this message to bind your wallet to Nicolas:\n" + nonce;
         return ResponseEntity.ok(ApiResponse.ok(Map.of("nonce", nonce, "message", message)));
     }
 

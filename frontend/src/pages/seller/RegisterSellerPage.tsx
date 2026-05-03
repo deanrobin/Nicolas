@@ -26,16 +26,24 @@ export default function RegisterSellerPage() {
 
   useEffect(() => {
     let cancelled = false
+    // Fallback: always show the form within 4 seconds even if API hangs
+    const fallback = setTimeout(() => {
+      if (!cancelled) setChecking(false)
+    }, 4000)
+
     ;(async () => {
       try {
         await merchantApi.me()
+        clearTimeout(fallback)
         if (!cancelled) navigate('/seller/dashboard', { replace: true })
       } catch {
+        clearTimeout(fallback)
         if (!cancelled) setChecking(false)
       }
     })()
     return () => {
       cancelled = true
+      clearTimeout(fallback)
     }
   }, [navigate])
 

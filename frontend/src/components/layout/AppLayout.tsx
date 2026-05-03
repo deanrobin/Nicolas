@@ -99,8 +99,42 @@ export default function AppLayout() {
           style={{ flex: 1, background: 'transparent', border: 'none' }}
         />
 
-        {/* Right: wallet status + avatar */}
+        {/* Right: seller cta + wallet status + avatar */}
         <Space size="middle">
+          {isMerchant ? (
+            <Button
+              size="middle"
+              icon={<ShopOutlined />}
+              onClick={() => navigate('/seller/dashboard')}
+              style={{
+                background: 'linear-gradient(135deg, #ffd17a, #fa8c16)',
+                border: 'none',
+                color: '#1a0e2e',
+                fontWeight: 600,
+                borderRadius: 999,
+                paddingInline: 16,
+              }}
+            >
+              卖家后台 / Dashboard
+            </Button>
+          ) : (
+            <Button
+              size="middle"
+              icon={<ShopOutlined />}
+              onClick={() => navigate('/seller/register')}
+              style={{
+                background: 'linear-gradient(135deg, #ffd17a, #fa8c16)',
+                border: 'none',
+                color: '#1a0e2e',
+                fontWeight: 600,
+                borderRadius: 999,
+                paddingInline: 16,
+              }}
+            >
+              成为商家 / Become a Seller
+            </Button>
+          )}
+
           {!hasWallet() && (
             <Button
               size="small"

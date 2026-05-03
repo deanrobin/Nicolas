@@ -7,6 +7,15 @@ import { merchantApi } from '../../api/client'
 
 const { Title, Paragraph, Text } = Typography
 
+const Label = ({ zh, en }: { zh: string; en: string }) => (
+  <span>
+    <span style={{ fontWeight: 500 }}>{zh}</span>
+    <Text type="secondary" style={{ marginLeft: 8, fontWeight: 400, fontSize: 12 }}>
+      {en}
+    </Text>
+  </span>
+)
+
 export default function ListAgentPage() {
   const navigate = useNavigate()
   const { message } = AntApp.useApp()
@@ -23,10 +32,10 @@ export default function ListAgentPage() {
         apiEndpoint: values.apiEndpoint as string,
         tags: values.tags as string,
       })
-      message.success('Agent submitted! AI review in progress.')
+      message.success('提交成功！AI 审核进行中 / Submitted! AI review in progress.')
       navigate('/seller/dashboard')
     } catch (err: unknown) {
-      message.error(err instanceof Error ? err.message : 'Failed to submit')
+      message.error(err instanceof Error ? err.message : '提交失败 / Failed to submit')
     } finally {
       setSubmitting(false)
     }
@@ -36,54 +45,69 @@ export default function ListAgentPage() {
     <div style={{ maxWidth: 720, margin: '0 auto', padding: '32px 24px' }}>
       <Title level={3}>
         <AppstoreAddOutlined style={{ marginRight: 8 }} />
-        List a New Agent
+        上架 Agent <Text type="secondary" style={{ fontSize: 16 }}>· List a New Agent</Text>
       </Title>
       <Paragraph type="secondary" style={{ marginBottom: 24 }}>
         Agent 按次付费。每次调用从买家钱包托管 USDT，完成后释放给你。
+        <br />
+        Pay-per-call. USDT is escrowed from the buyer's wallet for each call and released once delivery is confirmed.
       </Paragraph>
 
       <Alert
         type="info"
         showIcon
-        message="审核机制"
-        description="提交后默认 Pending，由 AI 审核员检查描述、定价、合规性。审核通过后立即上架。"
+        message="审核机制 / Review"
+        description="提交后默认 Pending，由 AI 审核员检查描述、定价、合规性。
+        Submissions default to Pending. AI reviewer checks description, pricing, compliance."
         style={{ marginBottom: 24 }}
       />
 
       <Card style={{ borderRadius: 16 }}>
         <Form layout="vertical" onFinish={onFinish}>
-          <Form.Item name="name" label="Agent Name" rules={[{ required: true }, { max: 100 }]}>
-            <Input size="large" placeholder="e.g. Tarot Reading Agent" />
+          <Form.Item
+            name="name"
+            label={<Label zh="Agent 名称" en="Agent Name" />}
+            rules={[{ required: true }, { max: 100 }]}
+          >
+            <Input size="large" placeholder="塔罗占卜师 / Tarot Reading Agent" />
           </Form.Item>
 
-          <Form.Item name="category" label="Category" rules={[{ required: true }]}>
+          <Form.Item
+            name="category"
+            label={<Label zh="分类" en="Category" />}
+            rules={[{ required: true }]}
+          >
             <Select
               size="large"
-              placeholder="Select category"
+              placeholder="请选择 / Select category"
               options={[
-                { label: 'Divination / 占卜', value: 'divination' },
-                { label: 'Analysis / 分析', value: 'analysis' },
-                { label: 'Career / 职业', value: 'career' },
-                { label: 'Finance / 金融', value: 'finance' },
-                { label: 'Web3 / 链上', value: 'web3' },
-                { label: 'Creative / 创作', value: 'creative' },
-                { label: 'Other', value: 'other' },
+                { label: '占卜 / Divination', value: 'divination' },
+                { label: '分析 / Analysis', value: 'analysis' },
+                { label: '职业 / Career', value: 'career' },
+                { label: '金融 / Finance', value: 'finance' },
+                { label: '链上 / Web3', value: 'web3' },
+                { label: '创作 / Creative', value: 'creative' },
+                { label: '其他 / Other', value: 'other' },
               ]}
             />
           </Form.Item>
 
           <Form.Item
             name="description"
-            label="Description"
+            label={<Label zh="详细介绍" en="Description" />}
             rules={[{ required: true }, { max: 2000 }]}
-            extra={<Text type="secondary">详细说明 Agent 能做什么、输入输出形式</Text>}
+            extra={
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                Agent 能做什么、输入输出形式 / What does this agent do? Input/output format?
+              </Text>
+            }
           >
-            <Input.TextArea rows={5} size="large" placeholder="What does this agent do?" />
+            <Input.TextArea rows={5} size="large" placeholder="例如：根据用户问题进行三牌阵塔罗解读……" />
           </Form.Item>
 
           <Form.Item
             name="priceUsdt"
-            label="Price per Call (USDT)"
+            label={<Label zh="单次调用价格 (USDT)" en="Price per Call (USDT)" />}
             rules={[{ required: true }]}
           >
             <InputNumber
@@ -98,20 +122,28 @@ export default function ListAgentPage() {
 
           <Form.Item
             name="apiEndpoint"
-            label="API Endpoint"
-            extra={<Text type="secondary">你的 Agent 服务地址（demo 阶段可留空）</Text>}
+            label={<Label zh="API 调用地址（选填）" en="API Endpoint (optional)" />}
+            extra={
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                你的 Agent 服务地址，demo 阶段可留空 / Your agent service URL; can be empty for demo.
+              </Text>
+            }
           >
             <Input size="large" placeholder="https://your-agent.com/api/invoke" />
           </Form.Item>
 
-          <Form.Item name="tags" label="Tags" extra={<Text type="secondary">逗号分隔</Text>}>
+          <Form.Item
+            name="tags"
+            label={<Label zh="标签" en="Tags" />}
+            extra={<Text type="secondary" style={{ fontSize: 12 }}>逗号分隔 / Comma-separated</Text>}
+          >
             <Input size="large" placeholder="tarot, spiritual, divination" />
           </Form.Item>
 
           <Space>
-            <Button onClick={() => navigate('/seller/dashboard')}>Cancel</Button>
+            <Button onClick={() => navigate('/seller/dashboard')}>取消 / Cancel</Button>
             <Button type="primary" htmlType="submit" loading={submitting} size="large">
-              Submit for Review
+              提交审核 / Submit for Review
             </Button>
           </Space>
         </Form>

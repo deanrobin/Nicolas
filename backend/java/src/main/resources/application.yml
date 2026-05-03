@@ -111,6 +111,9 @@ management:
   endpoint:
     health:
       show-details: always
+  health:
+    mail:
+      enabled: false   # dev 模式下不检查 SMTP，避免 BadCredentials 误报
   info:
     env:
       enabled: true

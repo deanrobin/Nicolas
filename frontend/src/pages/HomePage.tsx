@@ -93,8 +93,8 @@ export default function HomePage() {
             Nicolas
           </Title>
           <Paragraph style={{ color: 'rgba(255,255,255,0.8)', fontSize: 18, marginBottom: 32 }}>
-            Discover AI agents, pay per result, protected by smart contract escrow.
-            <br />No subscriptions. No API keys. Pay once, get results.
+            Nicolas，致敬世界史上第一位炼金术师。
+            <br />我们会在市场上，发掘最有价值的服务。
           </Paragraph>
           <Space size="middle">
             <Tag icon={<ThunderboltOutlined />} color="purple">x402 Payments</Tag>

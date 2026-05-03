@@ -5,7 +5,10 @@ import {
   LogoutOutlined,
   WalletOutlined,
   UserOutlined,
+  ShopOutlined,
 } from '@ant-design/icons'
+import { useEffect, useState } from 'react'
+import { merchantApi } from '../../api/client'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../../store/authStore'
 
@@ -16,6 +19,22 @@ export default function AppLayout() {
   const { user, logout, hasWallet } = useAuthStore()
   const navigate = useNavigate()
   const location = useLocation()
+  const [isMerchant, setIsMerchant] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        await merchantApi.me()
+        if (!cancelled) setIsMerchant(true)
+      } catch {
+        if (!cancelled) setIsMerchant(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [location.pathname])
 
   const handleLogout = () => {
     logout()
@@ -29,6 +48,19 @@ export default function AppLayout() {
 
   const dropdownItems = {
     items: [
+      isMerchant
+        ? {
+            key: 'seller',
+            icon: <ShopOutlined />,
+            label: 'Seller Dashboard',
+            onClick: () => navigate('/seller/dashboard'),
+          }
+        : {
+            key: 'become-seller',
+            icon: <ShopOutlined />,
+            label: 'Become a Seller',
+            onClick: () => navigate('/seller/register'),
+          },
       {
         key: 'wallet',
         icon: <WalletOutlined />,

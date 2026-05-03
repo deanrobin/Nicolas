@@ -63,3 +63,66 @@ CREATE TABLE IF NOT EXISTS wallet_nonces (
     PRIMARY KEY (id),
     KEY idx_wallet_nonces_user_id (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- -----------------------------------------------------------------------------
+-- [2026-05-03] V002 商家入驻 + Agent/Skill 上架
+-- -----------------------------------------------------------------------------
+
+-- 商家表（一个用户最多一个商家身份）
+CREATE TABLE IF NOT EXISTS merchants (
+    id             BIGINT       NOT NULL AUTO_INCREMENT,
+    user_id        BIGINT       NOT NULL,
+    brand_name     VARCHAR(100) NOT NULL,
+    description    TEXT,
+    contact_email  VARCHAR(255),
+    website        VARCHAR(255),
+    category       VARCHAR(50)  COMMENT 'individual | studio | company',
+    status         VARCHAR(20)  NOT NULL DEFAULT 'pending' COMMENT 'pending | approved | rejected',
+    review_reason  VARCHAR(500),
+    reviewed_at    DATETIME,
+    created_at     DATETIME     NOT NULL,
+    updated_at     DATETIME     NOT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_merchants_user_id (user_id),
+    KEY idx_merchants_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Agent 上架（按次付费）
+CREATE TABLE IF NOT EXISTS agent_listings (
+    id             BIGINT        NOT NULL AUTO_INCREMENT,
+    merchant_id    BIGINT        NOT NULL,
+    name           VARCHAR(100)  NOT NULL,
+    description    TEXT          NOT NULL,
+    category       VARCHAR(50),
+    price_usdt     DECIMAL(18,6) NOT NULL COMMENT '每次调用价格',
+    api_endpoint   VARCHAR(500)  COMMENT '商家提供的 Agent 调用入口',
+    tags           VARCHAR(255)  COMMENT '逗号分隔',
+    status         VARCHAR(20)   NOT NULL DEFAULT 'pending' COMMENT 'pending | approved | rejected',
+    review_reason  VARCHAR(500),
+    reviewed_at    DATETIME,
+    created_at     DATETIME      NOT NULL,
+    updated_at     DATETIME      NOT NULL,
+    PRIMARY KEY (id),
+    KEY idx_agent_listings_merchant_id (merchant_id),
+    KEY idx_agent_listings_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Skill 上架（一次性买断）
+CREATE TABLE IF NOT EXISTS skill_listings (
+    id             BIGINT        NOT NULL AUTO_INCREMENT,
+    merchant_id    BIGINT        NOT NULL,
+    name           VARCHAR(100)  NOT NULL,
+    description    TEXT          NOT NULL,
+    category       VARCHAR(50),
+    price_usdt     DECIMAL(18,6) NOT NULL COMMENT '一次买断价格',
+    download_url   VARCHAR(500)  COMMENT '交付物下载地址',
+    tags           VARCHAR(255)  COMMENT '逗号分隔',
+    status         VARCHAR(20)   NOT NULL DEFAULT 'pending' COMMENT 'pending | approved | rejected',
+    review_reason  VARCHAR(500),
+    reviewed_at    DATETIME,
+    created_at     DATETIME      NOT NULL,
+    updated_at     DATETIME      NOT NULL,
+    PRIMARY KEY (id),
+    KEY idx_skill_listings_merchant_id (merchant_id),
+    KEY idx_skill_listings_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

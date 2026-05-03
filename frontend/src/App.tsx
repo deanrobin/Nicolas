@@ -9,6 +9,10 @@ import OnboardingPage from './pages/OnboardingPage'
 import HomePage from './pages/HomePage'
 import SkillsPage from './pages/SkillsPage'
 import WalletPage from './pages/settings/WalletPage'
+import RegisterSellerPage from './pages/seller/RegisterSellerPage'
+import SellerDashboardPage from './pages/seller/SellerDashboardPage'
+import ListAgentPage from './pages/seller/ListAgentPage'
+import ListSkillPage from './pages/seller/ListSkillPage'
 
 const theme = {
   token: {
@@ -39,6 +43,10 @@ export default function App() {
             >
               <Route path="/" element={<HomePage />} />
               <Route path="/skills" element={<SkillsPage />} />
+              <Route path="/seller/register" element={<RegisterSellerPage />} />
+              <Route path="/seller/dashboard" element={<SellerDashboardPage />} />
+              <Route path="/seller/list-agent" element={<ListAgentPage />} />
+              <Route path="/seller/list-skill" element={<ListSkillPage />} />
               <Route path="/settings/wallet" element={<WalletPage />} />
             </Route>
 

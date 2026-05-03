@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Card, Form, Input, Select, Button, Typography, Alert, Space, Spin } from 'antd'
+import { Card, Form, Input, Select, Button, Typography, Alert, Space } from 'antd'
 import { ShopOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { App as AntApp } from 'antd'
@@ -22,28 +22,20 @@ export default function RegisterSellerPage() {
   const navigate = useNavigate()
   const { message } = AntApp.useApp()
   const [submitting, setSubmitting] = useState(false)
-  const [checking, setChecking] = useState(true)
 
+  // 后台静默检查：如果已是商家就跳到 dashboard；表单始终显示，按钮一定可见
   useEffect(() => {
     let cancelled = false
-    // Fallback: always show the form within 4 seconds even if API hangs
-    const fallback = setTimeout(() => {
-      if (!cancelled) setChecking(false)
-    }, 4000)
-
     ;(async () => {
       try {
         await merchantApi.me()
-        clearTimeout(fallback)
         if (!cancelled) navigate('/seller/dashboard', { replace: true })
       } catch {
-        clearTimeout(fallback)
-        if (!cancelled) setChecking(false)
+        // 还不是商家，留在本页填写表单
       }
     })()
     return () => {
       cancelled = true
-      clearTimeout(fallback)
     }
   }, [navigate])
 
@@ -58,14 +50,6 @@ export default function RegisterSellerPage() {
     } finally {
       setSubmitting(false)
     }
-  }
-
-  if (checking) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', padding: '64px 0' }}>
-        <Spin size="large" />
-      </div>
-    )
   }
 
   return (
@@ -157,12 +141,26 @@ export default function RegisterSellerPage() {
             <Input placeholder="https://example.com" size="large" />
           </Form.Item>
 
-          <Space>
-            <Button onClick={() => navigate('/')}>取消 / Cancel</Button>
-            <Button type="primary" htmlType="submit" loading={submitting} size="large">
-              提交审核 / Submit for Review
-            </Button>
-          </Space>
+          <Form.Item style={{ marginTop: 32, marginBottom: 0, textAlign: 'right' }}>
+            <Space>
+              <Button onClick={() => navigate('/')}>取消 / Cancel</Button>
+              <Button
+                type="primary"
+                htmlType="submit"
+                loading={submitting}
+                size="large"
+                style={{
+                  background: 'linear-gradient(135deg, #ffd17a, #fa8c16)',
+                  border: 'none',
+                  color: '#1a0e2e',
+                  fontWeight: 600,
+                  paddingInline: 28,
+                }}
+              >
+                提交审核 / Submit for Review
+              </Button>
+            </Space>
+          </Form.Item>
         </Form>
       </Card>
     </div>

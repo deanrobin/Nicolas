@@ -1,0 +1,67 @@
+version: '3.9'
+
+services:
+
+  # ── MySQL ─────────────────────────────────────────────────────────────
+  mysql:
+    image: mysql:8.0
+    container_name: nicolas-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASS:-root}
+      MYSQL_DATABASE: nicolas
+      MYSQL_USER: nicolas
+      MYSQL_PASSWORD: ${DB_PASS:-root}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Java Backend ──────────────────────────────────────────────────────
+  java-backend:
+    build:
+      context: ./backend/java
+      dockerfile: Dockerfile
+    container_name: nicolas-java
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:mysql://mysql:3306/nicolas?useUnicode=true&characterEncoding=utf8&serverTimezone=UTC&useSSL=false&allowPublicKeyRetrieval=true
+      DB_USER: nicolas
+      DB_PASS: ${DB_PASS:-root}
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production-must-be-32-chars-min}
+      JWT_EXPIRATION_DAYS: ${JWT_EXPIRATION_DAYS:-7}
+      MAIL_HOST: ${MAIL_HOST:-smtp.gmail.com}
+      MAIL_USER: ${MAIL_USER:-}
+      MAIL_PASS: ${MAIL_PASS:-}
+      MAIL_DEV_MODE: ${MAIL_DEV_MODE:-true}
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # ── Frontend (Nginx) ──────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: nicolas-frontend
+    restart: unless-stopped
+    depends_on:
+      - java-backend
+    ports:
+      - "80:80"
+      - "443:443"
+
+volumes:
+  mysql_data:

@@ -45,11 +45,64 @@ Nicolas is a full-stack AI agent platform split into four sub-projects:
 - Run with: `uvicorn main:app --reload --port 8000`
 
 ### Java Spring Boot Backend (`backend/java/`)
-- Package: `com.nicolas`
-- Java 17 features (records, sealed classes, text blocks) are allowed.
-- Use `RestTemplate` or `WebClient` to call the Python backend at `${python.backend.url}`.
-- Configuration is in `src/main/resources/application.yml`.
-- DTOs go in `model/`, controllers in `controller/`, services in `service/`.
+
+**Stack**: JDK 17 · Spring Boot 3.3 · MySQL · Maven · FastJSON2 · JJWT · Web3J
+
+**Package**: `com.nicolas`
+
+**Key dependencies**:
+- `fastjson2` + `fastjson2-extension-spring6` — primary HTTP message converter (replaces Jackson for responses)
+- `jjwt-api/impl/jackson` 0.12.x — stateless JWT auth
+- `web3j:core` 4.10.3 — EVM signature verification for wallet binding
+- `spring-boot-starter-security` — JWT filter, BCrypt password hashing
+- `spring-boot-starter-data-jpa` + `mysql-connector-j` — ORM / MySQL
+- `spring-boot-starter-mail` — email verification codes
+
+**Package layout**:
+```
+com.nicolas/
+├── config/          SecurityConfig, FastJsonConfig
+├── controller/      AuthController, WalletController, AgentController, HealthController
+├── exception/       BizException, GlobalExceptionHandler
+├── model/
+│   ├── dto/         ApiResponse, AuthResponse, RegisterRequest, LoginRequest,
+│   │                VerifyEmailRequest, WalletBindRequest, UpdateRoleRequest
+│   └── entity/      User, UserWallet, EmailVerification, WalletNonce
+├── repository/      UserRepository, UserWalletRepository,
+│                    EmailVerificationRepository, WalletNonceRepository
+├── security/        JwtUtil, JwtFilter
+└── service/         AuthService, WalletService, EmailService, AgentService
+```
+
+**Auth flow**:
+1. `POST /auth/register` → save user, send 6-digit email code
+2. `POST /auth/verify-email` → mark `email_verified = true`
+3. `POST /auth/login` → return JWT (7-day, configurable)
+4. `GET  /wallet/nonce` → generate nonce (JWT required)
+5. `POST /wallet/bind` → verify EVM signature via Web3J, save address
+
+**Unified response format** (`ApiResponse<T>`):
+```json
+{ "code": 200, "message": "ok", "data": { ... } }
+```
+
+**Environment variables**:
+
+| Variable | Default | Description |
+|---|---|---|
+| `DB_URL` | `jdbc:mysql://localhost:3306/nicolas?...` | MySQL URL |
+| `DB_USER` | `root` | MySQL username |
+| `DB_PASS` | `root` | MySQL password |
+| `JWT_SECRET` | (weak default) | Must be 256-bit in production |
+| `JWT_EXPIRATION_DAYS` | `7` | JWT validity |
+| `MAIL_HOST/USER/PASS` | — | SMTP config |
+| `MAIL_DEV_MODE` | `true` | Print codes to log instead of sending email |
+
+**Dev mode**: Set `MAIL_DEV_MODE=true` (default) — verification codes are logged, no real email sent.
+
+Java 17 features (records, sealed classes, text blocks) are allowed.
+Use `RestTemplate` or `WebClient` to call the Python backend at `${python.backend.url}`.
+Configuration is in `src/main/resources/application.yml`.
 
 ---
 

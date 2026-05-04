@@ -39,6 +39,8 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/auth/**").permitAll()
                 // Public: actuator health
                 .requestMatchers("/actuator/health").permitAll()
+                // Admin/operator backend
+                .requestMatchers("/admin/**").hasRole("ADMIN")
                 // Everything else requires a valid JWT
                 .anyRequest().authenticated()
             )

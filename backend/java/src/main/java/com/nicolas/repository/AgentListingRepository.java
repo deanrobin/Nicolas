@@ -9,4 +9,5 @@ public interface AgentListingRepository extends JpaRepository<AgentListing, Long
     List<AgentListing> findByMerchantIdOrderByCreatedAtDesc(Long merchantId);
     List<AgentListing> findByStatusOrderByCreatedAtAsc(String status);
     List<AgentListing> findByStatusOrderByCreatedAtDesc(String status);
+    long countByStatus(String status);
 }

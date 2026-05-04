@@ -9,4 +9,5 @@ public interface SkillListingRepository extends JpaRepository<SkillListing, Long
     List<SkillListing> findByMerchantIdOrderByCreatedAtDesc(Long merchantId);
     List<SkillListing> findByStatusOrderByCreatedAtAsc(String status);
     List<SkillListing> findByStatusOrderByCreatedAtDesc(String status);
+    long countByStatus(String status);
 }

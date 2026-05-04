@@ -128,8 +128,31 @@ com.nicolas/
 | `JWT_EXPIRATION_DAYS` | `7` | JWT validity |
 | `MAIL_HOST/USER/PASS` | — | SMTP config |
 | `MAIL_DEV_MODE` | `true` | Print codes to log instead of sending email |
+| `XLAYER_RPC_URL` | `https://rpc.xlayer.tech` | XLayer RPC endpoint |
+| `XLAYER_CHAIN_ID` | `196` | 196=mainnet, 195=testnet |
+| `XLAYER_USDT_ADDRESS` | (mainnet USDT) | ERC-20 USDT on XLayer |
+| `ESCROW_CONTRACT_ADDRESS` | — | Deployed `AgentEscrow` address |
+| `OPERATOR_ADDRESS` | — | Platform operator wallet (public) |
+| `OPERATOR_PRIVATE_KEY` | — | **Secret.** Operator key — server env only |
+| `ONCHAINOS_BASE_URL` | OKX wallet API | OnchainOS base URL |
+| `ONCHAINOS_API_KEY` | — | **Secret.** OK-ACCESS-KEY |
+| `ONCHAINOS_API_SECRET` | — | **Secret.** signing secret |
+| `ONCHAINOS_PASSPHRASE` | — | **Secret.** OK-ACCESS-PASSPHRASE |
+| `ONCHAINOS_PROJECT_ID` | — | OK-ACCESS-PROJECT |
 
 **Dev mode**: Set `MAIL_DEV_MODE=true` (default) — verification codes are logged, no real email sent.
+
+**Admin/operator backend**: Routes under `/admin/**` require a JWT whose `role`
+claim is `admin`. The server-side operator wallet (configured via
+`OPERATOR_ADDRESS` + `OPERATOR_PRIVATE_KEY`) is what the platform uses to call
+escrow contract owner/arbitrator methods. Endpoints:
+- `GET  /admin/stats` — counts of users / merchants / agents / skills (by status)
+- `GET  /admin/chain/info` — chain id, RPC, USDT/escrow/operator addresses
+- `GET  /admin/chain/escrow-balance` — USDT held by the escrow contract
+- `GET  /admin/chain/operator-balance` — operator's OKB + USDT balance
+- `GET  /admin/chain/usdt-balance?address=0x..` — USDT balance of any address
+- `POST /admin/onchain/broadcast` — proxy a signed raw tx via OnchainOS
+- `GET  /admin/onchain/tx/{hash}` — query tx status via OnchainOS
 
 Java 17 features (records, sealed classes, text blocks) are allowed.
 Use `RestTemplate` or `WebClient` to call the Python backend at `${python.backend.url}`.

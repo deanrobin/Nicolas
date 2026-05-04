@@ -145,7 +145,9 @@ com.nicolas/
 **Admin/operator backend**: Routes under `/admin/**` require a JWT whose `role`
 claim is `admin`. The server-side operator wallet (configured via
 `OPERATOR_ADDRESS` + `OPERATOR_PRIVATE_KEY`) is what the platform uses to call
-escrow contract owner/arbitrator methods. Endpoints:
+escrow contract owner/arbitrator methods.
+Full design + deployment guide: [`docs/admin-backend.md`](docs/admin-backend.md).
+Endpoints:
 - `GET  /admin/stats` — counts of users / merchants / agents / skills (by status)
 - `GET  /admin/chain/info` — chain id, RPC, USDT/escrow/operator addresses
 - `GET  /admin/chain/escrow-balance` — USDT held by the escrow contract

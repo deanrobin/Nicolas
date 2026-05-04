@@ -126,3 +126,16 @@ CREATE TABLE IF NOT EXISTS skill_listings (
     KEY idx_skill_listings_merchant_id (merchant_id),
     KEY idx_skill_listings_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- [2026-05-04] V003 服务商（平台运营方）唯一约束
+-- 全平台只能有一个 role='service_provider' 的用户。
+-- 用 generated column + unique index 实现"部分唯一"（只对该角色去重，
+-- 其他 role 不受影响）。
+ALTER TABLE users
+    ADD COLUMN role_service_provider_uk VARCHAR(20)
+        GENERATED ALWAYS AS (CASE WHEN role = 'service_provider' THEN 'X' END) VIRTUAL,
+    ADD UNIQUE KEY uk_users_role_service_provider (role_service_provider_uk);
+
+-- Bootstrap：把指定邮箱提升为唯一服务商（手动改邮箱后执行）
+-- UPDATE users SET role = 'service_provider' WHERE email = 'ops@your-domain.com';

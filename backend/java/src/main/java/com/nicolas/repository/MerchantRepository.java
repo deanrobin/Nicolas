@@ -9,4 +9,5 @@ import java.util.Optional;
 public interface MerchantRepository extends JpaRepository<Merchant, Long> {
     Optional<Merchant> findByUserId(Long userId);
     List<Merchant> findByStatus(String status);
+    long countByStatus(String status);
 }

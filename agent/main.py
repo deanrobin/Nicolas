@@ -13,8 +13,14 @@ Commands:
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
 import click
+from dotenv import load_dotenv
+
+# Load `.env` from the agent/ directory if it exists. This lets users put
+# ANTHROPIC_API_KEY in a local .env instead of exporting it every shell.
+load_dotenv(Path(__file__).parent / ".env")
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel

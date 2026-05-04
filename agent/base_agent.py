@@ -19,7 +19,7 @@ from memory.memory_store import MemoryStore
 
 # Default model to use for all agents.
 # Override per-agent in the YAML config with a `model` key.
-DEFAULT_MODEL = "claude-sonnet-4-5"
+DEFAULT_MODEL = "claude-sonnet-4-6"
 
 # Max tokens to generate per response.
 DEFAULT_MAX_TOKENS = 1024

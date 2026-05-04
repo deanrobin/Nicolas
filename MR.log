@@ -1,0 +1,154 @@
+# MR.log — 合并后部署/运维操作清单
+
+> 每次 PR 合并之后，把对应的"部署侧动作"追加到这里。
+> 块头格式：`## PR #<编号> — <标题>  (<合并日期>)`
+> 内容必须**可直接复制粘贴执行**：DB 迁移 / env 更新 / 启动命令。
+> **禁止删改历史块**，新内容追加到文件末尾。
+
+---
+
+## PR #26 — feat(java): 服务商后台 + 链上数据 + OnchainOS 集成 (2026-05-04)
+
+合并影响范围：
+- 新增表结构变更 V003（`users` 表加唯一约束）
+- 新增一批环境变量
+- 新增 1 个唯一服务商账号需 bootstrap
+- Java 后端需重启，前端不影响
+
+> 如果当前数据库里**没有**任何 `users` 数据（比如全新环境），按 §1→§2→§3→§4→§5 顺序执行。
+> 如果是**已上线环境**，按 §1→§2→§3→§4→§5 顺序执行；§2 SQL 在执行 §1 之前先确认 users 表里没有 2 个及以上 `role='service_provider'` 行，否则会卡住。
+
+### 1) 数据库迁移（V003）
+
+执行新追加的 V003 块：
+
+```bash
+# SSH 到服务器
+mysql -u${DB_USER} -p${DB_PASS} ${DB_NAME:-nicolas} \
+    < backend/java/sql/migration.sql
+```
+
+或者只跑增量（推荐，避免重复执行 V001/V002）：
+
+```bash
+mysql -u${DB_USER} -p${DB_PASS} ${DB_NAME:-nicolas} <<'SQL'
+ALTER TABLE users
+    ADD COLUMN role_service_provider_uk VARCHAR(20)
+        GENERATED ALWAYS AS (CASE WHEN role = 'service_provider' THEN 'X' END) VIRTUAL,
+    ADD UNIQUE KEY uk_users_role_service_provider (role_service_provider_uk);
+SQL
+```
+
+> ⚠ 若失败，先检查是否已有 ≥2 个服务商行：
+> `SELECT id, email, role FROM users WHERE role='service_provider';`
+> 处理掉重复后再执行 `ALTER TABLE`。
+
+### 2) Bootstrap 唯一服务商账号
+
+```sql
+-- 让目标账号先用普通流程注册并完成邮箱验证
+-- 然后执行（替换为真实邮箱）：
+UPDATE users SET role = 'service_provider' WHERE email = 'ops@your-domain.com';
+
+-- 校验只有 1 个
+SELECT id, email, role FROM users WHERE role = 'service_provider';
+```
+
+### 3) 服务器环境变量
+
+把以下新变量加到生产环境（systemd `EnvironmentFile=`、docker `--env-file`、k8s Secret 任选其一），值由部署者填入，**不进 Git**：
+
+```bash
+# ── XLayer 链 ───────────────────────────────────────
+XLAYER_RPC_URL=https://rpc.xlayer.tech
+XLAYER_CHAIN_ID=196
+XLAYER_USDT_ADDRESS=0x1E4a5963aBFD975d8c9021ce480b42188849D41d
+
+# ── Escrow + 运营方钱包 ─────────────────────────────
+ESCROW_CONTRACT_ADDRESS=0x...           # 已部署的 AgentEscrow 地址
+OPERATOR_ADDRESS=0x...                  # 服务商钱包地址
+OPERATOR_PRIVATE_KEY=0x...              # 机密！仅服务器 env
+
+# ── OnchainOS（OKX Wallet API）─────────────────────
+ONCHAINOS_BASE_URL=https://www.okx.com/api/v5/wallet
+ONCHAINOS_API_KEY=...                   # 机密
+ONCHAINOS_API_SECRET=...                # 机密
+ONCHAINOS_PASSPHRASE=...                # 机密
+ONCHAINOS_PROJECT_ID=...
+```
+
+> 已经存在的 `DB_*` / `JWT_*` / `MAIL_*` 不变。
+
+### 4) 重启 Java 后端
+
+按部署方式选一种：
+
+```bash
+# (A) 直接 jar
+cd backend/java
+./start.sh                              # 仓库自带的脚本，会先 kill 旧 PID 再 nohup 启动
+
+# (B) systemd
+sudo systemctl restart nicolas-backend
+
+# (C) docker-compose
+docker-compose up -d --force-recreate java-backend
+```
+
+启动后检查日志，确认两条关键行：
+
+```
+service_provider invariant OK (1 user holds the role).
+Tomcat started on port(s): 8080 ...
+```
+
+如果看到：
+```
+Invariant violated: N users have role=service_provider
+```
+说明 §2 没做对（多个服务商），回到 §2 修复后再启动。
+
+### 5) 烟雾测试
+
+服务商账号重新登录拿 JWT（旧 token 里 role 还是 buyer，必须重登）：
+
+```bash
+# 5.1 登录拿 JWT
+TOKEN=$(curl -s -X POST http://<host>:8080/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"ops@your-domain.com","password":"<pwd>"}' \
+  | jq -r .data.token)
+
+# 5.2 平台统计
+curl -s http://<host>:8080/provider/stats -H "Authorization: Bearer $TOKEN" | jq
+
+# 5.3 链上信息
+curl -s http://<host>:8080/provider/chain/info             -H "Authorization: Bearer $TOKEN" | jq
+curl -s http://<host>:8080/provider/chain/escrow-balance   -H "Authorization: Bearer $TOKEN" | jq
+curl -s http://<host>:8080/provider/chain/operator-balance -H "Authorization: Bearer $TOKEN" | jq
+```
+
+期望：
+- `/provider/stats` 返回各类计数
+- `/provider/chain/info` 返回 §3 配的地址
+- `/provider/chain/*-balance` 返回真实链上数值（无错则连通正常）
+
+### 6) 回滚步骤（万一）
+
+```sql
+-- 回退 V003：删除唯一约束 + generated column
+ALTER TABLE users
+    DROP INDEX uk_users_role_service_provider,
+    DROP COLUMN role_service_provider_uk;
+
+-- 把误升级的服务商改回买家（如有）
+UPDATE users SET role = 'buyer' WHERE role = 'service_provider';
+```
+
+env 变量保留无害（未配置时启动时只会 `WARN: No service_provider configured yet`，应用不会崩）。
+
+### 7) 影响范围与不变项
+
+- 前端：本 PR 不动前端，无需重新构建
+- Python 后端 / Agent CLI：无影响
+- 旧的 `/admin/**` URL 已在本 PR 中**移除**，外部不应再有调用方依赖（之前未上线）

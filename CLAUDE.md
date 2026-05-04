@@ -142,19 +142,27 @@ com.nicolas/
 
 **Dev mode**: Set `MAIL_DEV_MODE=true` (default) — verification codes are logged, no real email sent.
 
-**Admin/operator backend**: Routes under `/admin/**` require a JWT whose `role`
-claim is `admin`. The server-side operator wallet (configured via
-`OPERATOR_ADDRESS` + `OPERATOR_PRIVATE_KEY`) is what the platform uses to call
-escrow contract owner/arbitrator methods.
-Full design + deployment guide: [`docs/admin-backend.md`](docs/admin-backend.md).
+**Service-provider backend**: Routes under `/provider/**` require a JWT whose
+`role` claim is `service_provider`. The platform allows **exactly one** user
+with this role (DB unique index + `ServiceProviderInvariant` startup check +
+`AuthService` self-elevation guard). The server-side operator wallet
+(`OPERATOR_ADDRESS` + `OPERATOR_PRIVATE_KEY`) belongs to this same identity —
+i.e. the admin user *and* the on-chain operator wallet are the **same role**:
+`service_provider` (not buyer, not seller).
+Full design + deployment guide: [`docs/provider-backend.md`](docs/provider-backend.md).
 Endpoints:
-- `GET  /admin/stats` — counts of users / merchants / agents / skills (by status)
-- `GET  /admin/chain/info` — chain id, RPC, USDT/escrow/operator addresses
-- `GET  /admin/chain/escrow-balance` — USDT held by the escrow contract
-- `GET  /admin/chain/operator-balance` — operator's OKB + USDT balance
-- `GET  /admin/chain/usdt-balance?address=0x..` — USDT balance of any address
-- `POST /admin/onchain/broadcast` — proxy a signed raw tx via OnchainOS
-- `GET  /admin/onchain/tx/{hash}` — query tx status via OnchainOS
+- `GET  /provider/stats` — counts of users / merchants / agents / skills (by status)
+- `GET  /provider/chain/info` — chain id, RPC, USDT/escrow/operator addresses
+- `GET  /provider/chain/escrow-balance` — USDT held by the escrow contract
+- `GET  /provider/chain/operator-balance` — operator's OKB + USDT balance
+- `GET  /provider/chain/usdt-balance?address=0x..` — USDT balance of any address
+- `POST /provider/onchain/broadcast` — proxy a signed raw tx via OnchainOS
+- `GET  /provider/onchain/tx/{hash}` — query tx status via OnchainOS
+
+Bootstrap the singleton service-provider via SQL only:
+```sql
+UPDATE users SET role='service_provider' WHERE email='ops@your-domain.com';
+```
 
 Java 17 features (records, sealed classes, text blocks) are allowed.
 Use `RestTemplate` or `WebClient` to call the Python backend at `${python.backend.url}`.

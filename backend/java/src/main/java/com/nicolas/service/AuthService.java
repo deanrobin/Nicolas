@@ -114,10 +114,26 @@ public class AuthService {
         return resp;
     }
 
+    /**
+     * Update a user's role. Allowed values via this endpoint:
+     * {@code buyer} | {@code seller} | {@code both}.
+     *
+     * <p>The {@code service_provider} role is the platform's singleton
+     * operator identity — it can only be assigned by direct DB bootstrap
+     * (see {@code docs/provider-backend.md}) and cannot be downgraded here.
+     */
     @Transactional
     public void updateRole(Long userId, String role) {
+        if ("service_provider".equals(role)) {
+            throw BizException.badRequest(
+                "service_provider role can only be assigned via DB bootstrap");
+        }
         User user = userRepo.findById(userId)
                 .orElseThrow(() -> BizException.notFound("User not found"));
+        if ("service_provider".equals(user.getRole())) {
+            throw BizException.badRequest(
+                "service_provider role cannot be changed via this endpoint");
+        }
         user.setRole(role);
         userRepo.save(user);
     }

@@ -17,12 +17,15 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Operator/admin endpoints. All routes require ROLE_ADMIN
- * (enforced in SecurityConfig).
+ * Service-provider (platform operator) endpoints.
+ * All routes require ROLE_SERVICE_PROVIDER (enforced in SecurityConfig).
+ *
+ * <p>Exactly one user can hold this role; see
+ * {@link com.nicolas.config.ServiceProviderInvariant}.
  */
 @RestController
-@RequestMapping("/admin")
-public class AdminController {
+@RequestMapping("/provider")
+public class ProviderController {
 
     private final UserRepository userRepo;
     private final MerchantRepository merchantRepo;
@@ -32,7 +35,7 @@ public class AdminController {
     private final ChainConfig chainConfig;
     private final OnchainOsClient onchainOs;
 
-    public AdminController(UserRepository userRepo,
+    public ProviderController(UserRepository userRepo,
                            MerchantRepository merchantRepo,
                            AgentListingRepository agentRepo,
                            SkillListingRepository skillRepo,

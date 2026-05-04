@@ -1,0 +1,1793 @@
+# Nicolas Agent Orchestrator MVP 方案
+
+## 1. 目标
+
+当前阶段先做一个 Demo 级别但架构清晰的 Agent 管理系统。
+
+目标不是让 Agent 直接接管业务，而是让 Agent 做判断、生成建议、写入 DB 工单，然后由 Java 后端和 Admin 后台完成最终执行。
+
+本阶段保留 3 个 Agent：
+
+| Agent | 名称 | 职责 |
+|---|---|---|
+| 审核 Agent | `review_agent` | 商家申请审核、商家新增 skill / agent 审核 |
+| 客服 Agent | `support_agent` | 平台客服、FAQ、订单状态解释、售后引导 |
+| 纠纷预审 Agent | `dispute_agent` | 退款、售后、纠纷预审，给管理员处理建议 |
+
+暂时删除：
+
+| Agent | 原因 |
+|---|---|
+| `quality_agent` | Demo 阶段业务规模还不大，暂时不需要单独做质检 / 风控 Agent |
+
+---
+
+## 2. 核心原则
+
+### 2.1 Agent 只做判断，不做最终执行
+
+Agent 的职责是：
+
+```text
+读取输入
+理解规则
+调用必要工具
+给出判断
+返回结构化 JSON
+写入 DB 审核单 / 工单 / 纠纷单
+```
+
+Agent 不应该直接：
+
+```text
+修改商家状态
+修改订单状态
+执行退款
+调用合约
+封禁用户
+删除内容
+```
+
+最终业务动作由 Java 后端执行。
+
+---
+
+### 2.2 审核类支持 24 小时自动采纳 Agent 结果
+
+审核类包括：
+
+```text
+商家申请审核
+商家新增 skill 审核
+商家新增 agent 审核
+```
+
+流程是：
+
+```text
+review_agent 给出判断
+  ↓
+判断结果写入 review_cases 表
+  ↓
+通知 Admin 后台
+  ↓
+人工可以快速审核通过或驳回
+  ↓
+如果 24 小时未处理，则自动采纳 Agent 的判断结果
+```
+
+注意：
+
+```text
+不是 24 小时后全部默认通过
+而是 24 小时后默认支持 review_agent 的结果
+```
+
+例如：
+
+```text
+Agent 判断 APPROVE
+  → 人工 24 小时未处理
+  → 自动通过
+
+Agent 判断 REJECT
+  → 人工 24 小时未处理
+  → 自动驳回
+
+Agent 判断 MANUAL_REVIEW
+  → 不建议自动处理
+  → 继续留给人工处理
+```
+
+MVP 建议：
+
+```text
+APPROVE / REJECT：允许 24h 自动采纳
+MANUAL_REVIEW：不允许自动采纳
+```
+
+---
+
+### 2.3 退款纠纷不允许自动执行
+
+纠纷涉及资金，所以不能超时自动执行。
+
+流程是：
+
+```text
+dispute_agent 给出退款 / 放款 / 部分退款建议
+  ↓
+写入 dispute_cases 表
+  ↓
+Admin 后台展示
+  ↓
+管理员人工处理
+  ↓
+Java 执行最终业务动作
+  ↓
+必要时 Java 调用合约
+```
+
+纠纷类不设置：
+
+```text
+auto_apply_at
+auto_apply_enabled
+```
+
+---
+
+## 3. 总体架构
+
+```text
+Frontend
+  ↓
+Java Backend
+  ↓
+Python Agent Orchestrator
+  ↓
+review_agent / support_agent / dispute_agent
+  ↓
+DB 工单 / 审核单 / 纠纷单
+  ↓
+Java Admin Backend
+  ↓
+管理员确认
+  ↓
+Java 执行业务状态变更 / 合约动作
+```
+
+更详细结构：
+
+```text
+                       ┌────────────────────┐
+                       │      Frontend       │
+                       └─────────┬──────────┘
+                                 │
+                                 ▼
+                       ┌────────────────────┐
+                       │   Java Backend      │
+                       │ 用户/订单/商家/钱包 │
+                       └─────────┬──────────┘
+                                 │ internal API
+                                 ▼
+              ┌──────────────────────────────────┐
+              │ Python Agent Orchestrator         │
+              │                                  │
+              │ - Agent Registry                 │
+              │ - Task Router                    │
+              │ - Policy Loader                  │
+              │ - Knowledge Loader               │
+              │ - Tool Registry                  │
+              │ - Schema Validator               │
+              │ - Handoff Manager                │
+              │ - DB Writer                      │
+              └───────┬───────────┬──────────────┘
+                      │           │
+          ┌───────────▼───┐   ┌───▼──────────┐
+          │ review_agent   │   │ support_agent│
+          │ 商家/服务审核  │   │ 客服/引导    │
+          └───────────┬───┘   └───┬──────────┘
+                      │           │ handoff
+                      │           ▼
+                      │   ┌───────────────┐
+                      └──►│ dispute_agent │
+                          │ 纠纷预审       │
+                          └───────┬───────┘
+                                  │
+                                  ▼
+                       ┌────────────────────┐
+                       │ Java Admin Backend  │
+                       │ 审核/纠纷/工单处理 │
+                       └─────────┬──────────┘
+                                 │
+                                 ▼
+                       ┌────────────────────┐
+                       │ Escrow Contract     │
+                       │ 托管/放款/退款      │
+                       └────────────────────┘
+```
+
+---
+
+## 4. 三个 Agent 的职责
+
+### 4.1 审核 Agent：`review_agent`
+
+#### 负责范围
+
+```text
+1. 成为商家的申请自动审核
+2. 商家新增 skill 的自动审核
+3. 商家新增 agent / service 的自动审核
+```
+
+#### 审核内容
+
+```text
+商家名称是否合规
+联系方式是否完整
+服务描述是否清晰
+服务类目是否高风险
+是否涉及违法、诈骗、黑灰产
+是否存在夸大承诺
+是否引导用户绕过平台交易
+是否存在金融收益承诺
+是否涉及医疗、法律、心理等高风险建议
+价格是否明确
+交付周期是否明确
+退款规则是否明确
+agent endpoint 是否可访问
+```
+
+#### 输出结果
+
+```text
+APPROVE
+REJECT
+MANUAL_REVIEW
+```
+
+#### 输出 JSON 示例
+
+```json
+{
+  "task_type": "seller_agent_review",
+  "decision": "APPROVE",
+  "risk_level": "LOW",
+  "risk_tags": [],
+  "reasons": [
+    "服务描述清晰",
+    "未发现明显违规承诺",
+    "价格和交付说明完整"
+  ],
+  "suggested_fix": [],
+  "requires_human_review": false,
+  "auto_apply_allowed": true
+}
+```
+
+驳回示例：
+
+```json
+{
+  "task_type": "merchant_application_review",
+  "decision": "REJECT",
+  "risk_level": "HIGH",
+  "risk_tags": [
+    "guaranteed_profit",
+    "off_platform_payment"
+  ],
+  "reasons": [
+    "描述中包含保证收益类表述",
+    "引导用户绕过平台私下付款"
+  ],
+  "suggested_fix": [
+    "删除稳赚、保本、保证收益等承诺",
+    "删除站外付款联系方式"
+  ],
+  "requires_human_review": false,
+  "auto_apply_allowed": true
+}
+```
+
+人工复核示例：
+
+```json
+{
+  "task_type": "seller_skill_review",
+  "decision": "MANUAL_REVIEW",
+  "risk_level": "MEDIUM",
+  "risk_tags": [
+    "medical_advice",
+    "unclear_disclaimer"
+  ],
+  "reasons": [
+    "服务可能涉及医疗建议，需要人工确认边界",
+    "缺少免责声明"
+  ],
+  "suggested_fix": [
+    "说明该服务不能替代专业医生诊断",
+    "补充使用限制"
+  ],
+  "requires_human_review": true,
+  "auto_apply_allowed": false
+}
+```
+
+---
+
+### 4.2 客服 Agent：`support_agent`
+
+#### 负责范围
+
+```text
+用户登录问题
+邮箱验证问题
+钱包绑定问题
+支付问题
+订单状态解释
+平台规则说明
+商家入驻说明
+退款规则说明
+普通 FAQ
+售后问题收集
+判断是否需要转人工
+判断是否需要转纠纷
+```
+
+#### 不允许做的事情
+
+```text
+不能承诺退款
+不能做最终仲裁
+不能修改订单状态
+不能要求用户提供私钥、助记词、验证码、密码
+不能引导用户绕过平台交易
+```
+
+#### 问题分类
+
+```text
+account_login
+wallet_payment
+order_status
+merchant_onboarding
+agent_usage
+refund_general
+delivery_unsatisfied
+dispute_request
+account_security
+unsafe_or_abuse
+unknown
+```
+
+#### 动作类型
+
+```text
+ANSWER
+ASK_CLARIFYING
+HANDOFF_TO_HUMAN
+HANDOFF_TO_DISPUTE
+REFUSE
+```
+
+#### 普通回答示例
+
+```json
+{
+  "action": "ANSWER",
+  "category": "ORDER_STATUS",
+  "reply": "你的订单目前处于已交付状态。如果你对交付内容不满意，可以在订单详情页发起纠纷。",
+  "need_human": false,
+  "handoff": null
+}
+```
+
+#### 转人工示例
+
+```json
+{
+  "action": "HANDOFF_TO_HUMAN",
+  "category": "ACCOUNT_SECURITY",
+  "reply": "这个问题涉及账号安全，我会帮你转给人工客服处理。",
+  "need_human": true,
+  "handoff": {
+    "target": "human_admin",
+    "reason": "account_security"
+  }
+}
+```
+
+#### 转纠纷示例
+
+```json
+{
+  "action": "HANDOFF_TO_DISPUTE",
+  "category": "DELIVERY_UNSATISFIED",
+  "reply": "我已经帮你整理了问题，这类情况需要进入纠纷处理流程。",
+  "need_human": false,
+  "handoff": {
+    "target_agent": "dispute_agent",
+    "reason": "buyer_unsatisfied_with_delivery",
+    "payload": {
+      "order_id": "order_123",
+      "complaint_summary": "买家认为卖家交付内容与订单需求不匹配",
+      "evidence_refs": [
+        "message_11",
+        "delivery_3"
+      ]
+    }
+  }
+}
+```
+
+---
+
+### 4.3 纠纷预审 Agent：`dispute_agent`
+
+#### 负责范围
+
+```text
+读取订单要求
+读取卖家交付内容
+读取买家投诉
+读取客服 Agent 的前置总结
+读取聊天记录
+读取证据材料
+输出退款 / 放款 / 人工复核建议
+```
+
+#### 不允许做的事情
+
+```text
+不能直接退款
+不能直接放款
+不能修改订单状态
+不能调用合约
+不能替代管理员做最终裁决
+```
+
+#### 输出建议类型
+
+```text
+FULL_REFUND
+PARTIAL_REFUND
+RELEASE_TO_SELLER
+REQUEST_SELLER_RESPONSE
+MANUAL_REVIEW
+```
+
+#### 输出示例
+
+```json
+{
+  "task_type": "dispute_precheck",
+  "recommendation": "PARTIAL_REFUND",
+  "buyer_refund_bps": 5000,
+  "confidence": 0.74,
+  "reasoning_summary": "卖家完成了部分交付，但缺少订单要求中的风险分析部分。",
+  "need_seller_response": true,
+  "need_human_review": true,
+  "admin_checklist": [
+    "确认订单需求中是否明确要求风险分析",
+    "确认卖家是否在后续消息中补充过材料",
+    "确认买家是否在有效时间内提出纠纷"
+  ]
+}
+```
+
+---
+
+## 5. Agent 管理方式
+
+Agent 管理不只是管理 prompt，而是要管理以下几层：
+
+```text
+灵魂 soul
+规则 rules
+知识库 knowledge
+工作流 workflow
+工具 tools
+输出 schema
+handoff 规则
+```
+
+### 5.1 灵魂：Soul
+
+定义 Agent 是谁、负责什么、边界是什么、输出风格是什么。
+
+例如：
+
+```yaml
+soul: |
+  You are the Nicolas platform review agent.
+  You review merchant applications and seller-submitted agents or skills.
+  You are strict, fair, and conservative.
+  You only make review recommendations.
+  You never modify business status directly.
+  You must return valid JSON only.
+```
+
+---
+
+### 5.2 规则：Rules
+
+规则用于约束 Agent 判断。
+
+例如审核规则：
+
+```yaml
+reject_rules:
+  - id: illegal_service
+    description: 涉及违法、诈骗、黑灰产、绕过平台交易
+    decision: REJECT
+
+  - id: guaranteed_profit
+    description: 承诺投资收益、稳赚、保本、带单
+    decision: REJECT
+
+manual_review_rules:
+  - id: medical_or_legal_claim
+    description: 医疗、法律、金融建议类服务必须人工复核
+    decision: MANUAL_REVIEW
+
+  - id: emotional_or_divination
+    description: 情感、占卜、心理倾向类服务需要弱化承诺
+    decision: MANUAL_REVIEW
+```
+
+---
+
+### 5.3 知识库：Knowledge
+
+Demo 阶段先用 Markdown 文件即可，不需要一开始就做复杂 RAG。
+
+建议路径：
+
+```text
+/root/Nicolas/backend/python/knowledge/
+  merchant_onboarding.md
+  agent_listing_policy.md
+  prohibited_services.md
+  support_faq.md
+  refund_policy.md
+  dispute_policy.md
+```
+
+对应关系：
+
+```text
+merchant_application_review
+  → merchant_onboarding.md
+  → agent_listing_policy.md
+  → prohibited_services.md
+
+seller_agent_review
+  → agent_listing_policy.md
+  → prohibited_services.md
+
+support_reply
+  → support_faq.md
+  → refund_policy.md
+  → merchant_onboarding.md
+
+dispute_precheck
+  → dispute_policy.md
+  → refund_policy.md
+```
+
+---
+
+### 5.4 工作流：Workflow
+
+工作流不要完全交给 LLM 判断。
+
+例如客服工作流：
+
+```text
+收到用户问题
+  ↓
+support_agent 分类
+  ↓
+根据分类决定动作
+  ↓
+返回回答 / 追问信息 / 转人工 / 转纠纷
+```
+
+规则示例：
+
+```yaml
+support_rules:
+  direct_answer:
+    - account_login
+    - merchant_onboarding
+    - agent_usage
+    - order_status
+    - refund_general
+
+  ask_clarifying:
+    - missing_order_id
+    - incomplete_description
+    - need_user_identity_check
+
+  handoff_to_dispute:
+    - delivery_unsatisfied
+    - dispute_request
+    - refund_request_after_delivery
+    - seller_delivery_mismatch
+
+  handoff_to_human:
+    - legal_threat
+    - large_amount_order
+    - account_security
+    - low_confidence
+    - user_unsatisfied_twice
+
+  refuse:
+    - off_platform_payment
+    - request_private_key
+    - request_seed_phrase
+    - illegal_request
+```
+
+---
+
+## 6. Agent 之间怎么通讯
+
+### 6.1 不建议 Agent 直接互相调用
+
+不建议这样：
+
+```text
+support_agent 直接 HTTP 调 dispute_agent
+```
+
+也不建议这样：
+
+```text
+support_agent 和 dispute_agent 自由聊天
+```
+
+原因：
+
+```text
+不好控制权限
+不好记录日志
+不好 debug
+容易产生无限循环
+业务状态不清晰
+不方便 Admin 后台展示
+```
+
+---
+
+### 6.2 推荐使用 Handoff 机制
+
+Agent 之间不直接通讯，而是通过 Python Orchestrator 做交接。
+
+```text
+support_agent
+  ↓
+输出 handoff JSON
+  ↓
+Python Orchestrator 校验 handoff
+  ↓
+创建新的 dispute_case / agent_task
+  ↓
+调用 dispute_agent
+  ↓
+写入 DB
+```
+
+### 客服转纠纷完整流程
+
+```text
+用户：我对订单 order_123 不满意，想退款
+  ↓
+Java 调用 support_agent
+  ↓
+support_agent 判断 category = DELIVERY_UNSATISFIED
+  ↓
+support_agent 输出 HANDOFF_TO_DISPUTE
+  ↓
+Python Orchestrator 创建 dispute_case
+  ↓
+Python Orchestrator 调用 dispute_agent
+  ↓
+dispute_agent 输出预审建议
+  ↓
+写入 dispute_cases
+  ↓
+Java Admin 后台展示
+  ↓
+管理员人工处理
+```
+
+---
+
+## 7. Python 目录设计
+
+项目路径：
+
+```text
+/root/Nicolas
+```
+
+建议目录：
+
+```text
+/root/Nicolas/
+  agent/
+    agents/
+      review_agent.yaml
+      support_agent.yaml
+      dispute_agent.yaml
+
+  backend/
+    python/
+      main.py
+      ai_client.py
+      models.py
+      reports.py
+      requirements.txt
+
+      orchestrator/
+        __init__.py
+        agent_registry.py
+        agent_runner.py
+        task_router.py
+        handoff_manager.py
+        policy_loader.py
+        knowledge_loader.py
+        schema_validator.py
+        db.py
+        notification_service.py
+
+      schemas/
+        __init__.py
+        review_schema.py
+        support_schema.py
+        dispute_schema.py
+        task_schema.py
+
+      policies/
+        review_rules.yaml
+        support_playbook.yaml
+        dispute_rules.yaml
+
+      knowledge/
+        merchant_onboarding.md
+        agent_listing_policy.md
+        prohibited_services.md
+        support_faq.md
+        refund_policy.md
+        dispute_policy.md
+
+      migrations/
+        001_agent_tasks.sql
+        002_review_cases.sql
+        003_support_tickets.sql
+        004_dispute_cases.sql
+        005_admin_notifications.sql
+```
+
+---
+
+## 8. Python Orchestrator 模块职责
+
+### 8.1 `agent_registry.py`
+
+负责加载 Agent YAML 配置：
+
+```text
+/root/Nicolas/agent/agents/review_agent.yaml
+/root/Nicolas/agent/agents/support_agent.yaml
+/root/Nicolas/agent/agents/dispute_agent.yaml
+```
+
+---
+
+### 8.2 `task_router.py`
+
+根据 `task_type` 分配 Agent。
+
+```python
+TASK_AGENT_MAP = {
+    "merchant_application_review": "review_agent",
+    "seller_agent_review": "review_agent",
+    "seller_skill_review": "review_agent",
+
+    "support_reply": "support_agent",
+
+    "dispute_precheck": "dispute_agent",
+}
+```
+
+---
+
+### 8.3 `agent_runner.py`
+
+负责：
+
+```text
+组装 system prompt
+加载 rules
+加载 knowledge
+加载工具结果
+调用模型
+拿到 JSON 输出
+```
+
+---
+
+### 8.4 `schema_validator.py`
+
+负责校验 Agent 输出格式。
+
+```text
+review_agent → review_schema
+support_agent → support_schema
+dispute_agent → dispute_schema
+```
+
+如果 Agent 输出格式错误：
+
+```text
+第一次：要求模型修复 JSON
+第二次：标记 FAILED，进入人工处理
+```
+
+---
+
+### 8.5 `handoff_manager.py`
+
+负责 Agent 之间交接。
+
+核心原则：
+
+```text
+Agent 不直接调用另一个 Agent
+Agent 只能提出 handoff 请求
+Orchestrator 判断是否允许 handoff
+Orchestrator 创建下一个 task
+```
+
+---
+
+### 8.6 `db.py`
+
+负责 Python 写 DB。
+
+Python 可以写：
+
+```text
+agent_tasks
+review_cases
+support_tickets
+dispute_cases
+admin_notifications
+```
+
+Python 不应该直接写：
+
+```text
+merchant.status
+seller_agent.status
+seller_skill.status
+order.status
+escrow.status
+```
+
+最终业务状态由 Java 写。
+
+---
+
+## 9. FastAPI 接口设计
+
+### 9.1 统一 Agent 任务入口
+
+```text
+POST /api/internal/agent-tasks
+```
+
+请求示例：
+
+```json
+{
+  "task_type": "merchant_application_review",
+  "subject_type": "merchant_application",
+  "subject_id": "merchant_app_123",
+  "payload": {
+    "merchant_name": "Moon Studio",
+    "description": "提供塔罗、情感分析、AI Agent 定制服务",
+    "contact_email": "seller@example.com",
+    "services": [
+      {
+        "name": "Moon Tarot Agent",
+        "description": "分析近期感情走势",
+        "endpoint": "https://example.com/agent",
+        "pricing": "0.5 USDC/call"
+      }
+    ]
+  }
+}
+```
+
+返回示例：
+
+```json
+{
+  "task_id": "task_001",
+  "assigned_agent": "review_agent",
+  "status": "COMPLETED",
+  "created_case": {
+    "type": "review_case",
+    "review_id": "review_001",
+    "status": "WAITING_HUMAN",
+    "auto_apply_at": "2026-05-05 15:30:00"
+  },
+  "result": {
+    "decision": "APPROVE",
+    "risk_level": "LOW",
+    "requires_human_review": false
+  }
+}
+```
+
+---
+
+### 9.2 可选快捷接口
+
+底层仍然走统一 Orchestrator。
+
+```text
+POST /api/internal/review/merchant
+POST /api/internal/review/seller-agent
+POST /api/internal/review/seller-skill
+POST /api/internal/support/reply
+POST /api/internal/dispute/precheck
+```
+
+---
+
+## 10. DB 表设计
+
+### 10.1 通用 Agent 任务表：`agent_tasks`
+
+```sql
+CREATE TABLE agent_tasks (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+
+    task_id VARCHAR(64) NOT NULL UNIQUE,
+    task_type VARCHAR(64) NOT NULL,
+    agent_name VARCHAR(64) NOT NULL,
+
+    subject_type VARCHAR(64) NOT NULL,
+    subject_id VARCHAR(64) NOT NULL,
+
+    source_agent VARCHAR(64) NULL,
+    source_task_id VARCHAR(64) NULL,
+
+    status VARCHAR(32) NOT NULL,
+    -- CREATED / RUNNING / COMPLETED / FAILED / HANDOFF_CREATED
+
+    payload_json JSON NOT NULL,
+    result_json JSON NULL,
+    error_message TEXT NULL,
+
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    INDEX idx_agent_tasks_subject (subject_type, subject_id),
+    INDEX idx_agent_tasks_agent (agent_name),
+    INDEX idx_agent_tasks_status (status)
+);
+```
+
+---
+
+### 10.2 审核单表：`review_cases`
+
+```sql
+CREATE TABLE review_cases (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+
+    review_id VARCHAR(64) NOT NULL UNIQUE,
+
+    review_type VARCHAR(64) NOT NULL,
+    -- MERCHANT_APPLICATION / SELLER_AGENT / SELLER_SKILL
+
+    subject_type VARCHAR(64) NOT NULL,
+    subject_id VARCHAR(64) NOT NULL,
+
+    applicant_user_id BIGINT NULL,
+    merchant_id BIGINT NULL,
+
+    agent_task_id VARCHAR(64) NOT NULL,
+
+    agent_decision VARCHAR(32) NOT NULL,
+    -- APPROVE / REJECT / MANUAL_REVIEW
+
+    agent_risk_level VARCHAR(32) NOT NULL,
+    -- LOW / MEDIUM / HIGH
+
+    agent_result_json JSON NOT NULL,
+
+    status VARCHAR(32) NOT NULL,
+    -- WAITING_HUMAN / HUMAN_APPROVED / HUMAN_REJECTED /
+    -- AUTO_APPROVED / AUTO_REJECTED / NEED_CHANGE / EXPIRED_MANUAL_REVIEW
+
+    auto_apply_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    auto_apply_at DATETIME NULL,
+
+    human_reviewer_id BIGINT NULL,
+    human_decision VARCHAR(32) NULL,
+    human_comment TEXT NULL,
+    reviewed_at DATETIME NULL,
+
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    INDEX idx_review_cases_status (status),
+    INDEX idx_review_cases_auto_apply (auto_apply_enabled, auto_apply_at),
+    INDEX idx_review_cases_subject (subject_type, subject_id)
+);
+```
+
+审核结果写入逻辑：
+
+```text
+agent_decision = APPROVE
+  → status = WAITING_HUMAN
+  → auto_apply_enabled = true
+  → auto_apply_at = now + 24h
+
+agent_decision = REJECT
+  → status = WAITING_HUMAN
+  → auto_apply_enabled = true
+  → auto_apply_at = now + 24h
+
+agent_decision = MANUAL_REVIEW
+  → status = WAITING_HUMAN
+  → auto_apply_enabled = false
+  → auto_apply_at = null
+```
+
+---
+
+### 10.3 客服工单表：`support_tickets`
+
+```sql
+CREATE TABLE support_tickets (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+
+    ticket_id VARCHAR(64) NOT NULL UNIQUE,
+
+    user_id BIGINT NOT NULL,
+    order_id VARCHAR(64) NULL,
+
+    category VARCHAR(64) NULL,
+    -- ACCOUNT / WALLET / ORDER_STATUS / REFUND_GENERAL /
+    -- DELIVERY_UNSATISFIED / DISPUTE_REQUEST / UNKNOWN
+
+    status VARCHAR(32) NOT NULL,
+    -- OPEN / AI_REPLIED / WAITING_USER / HANDOFF_TO_DISPUTE /
+    -- WAITING_HUMAN / CLOSED
+
+    latest_agent_task_id VARCHAR(64) NULL,
+
+    user_message TEXT NOT NULL,
+    agent_reply TEXT NULL,
+
+    handoff_target VARCHAR(64) NULL,
+    handoff_payload_json JSON NULL,
+
+    need_human BOOLEAN NOT NULL DEFAULT FALSE,
+
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    INDEX idx_support_tickets_user (user_id),
+    INDEX idx_support_tickets_order (order_id),
+    INDEX idx_support_tickets_status (status)
+);
+```
+
+---
+
+### 10.4 纠纷单表：`dispute_cases`
+
+```sql
+CREATE TABLE dispute_cases (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+
+    dispute_id VARCHAR(64) NOT NULL UNIQUE,
+
+    order_id VARCHAR(64) NOT NULL,
+    buyer_user_id BIGINT NOT NULL,
+    seller_user_id BIGINT NULL,
+
+    source_ticket_id VARCHAR(64) NULL,
+    agent_task_id VARCHAR(64) NULL,
+
+    status VARCHAR(32) NOT NULL,
+    -- AI_PRECHECKING / WAITING_ADMIN / WAITING_SELLER_RESPONSE /
+    -- ADMIN_RESOLVED / CLOSED
+
+    complaint_summary TEXT NULL,
+    evidence_json JSON NULL,
+
+    agent_recommendation VARCHAR(64) NULL,
+    -- FULL_REFUND / PARTIAL_REFUND / RELEASE_TO_SELLER /
+    -- REQUEST_SELLER_RESPONSE / MANUAL_REVIEW
+
+    buyer_refund_bps INT NULL,
+    confidence DECIMAL(5,4) NULL,
+
+    agent_result_json JSON NULL,
+
+    admin_reviewer_id BIGINT NULL,
+    admin_decision VARCHAR(64) NULL,
+    admin_comment TEXT NULL,
+    resolved_at DATETIME NULL,
+
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    INDEX idx_dispute_cases_order (order_id),
+    INDEX idx_dispute_cases_status (status),
+    INDEX idx_dispute_cases_buyer (buyer_user_id)
+);
+```
+
+纠纷类不设置自动执行字段。
+
+---
+
+### 10.5 管理员通知表：`admin_notifications`
+
+```sql
+CREATE TABLE admin_notifications (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+
+    notification_id VARCHAR(64) NOT NULL UNIQUE,
+
+    type VARCHAR(64) NOT NULL,
+    -- REVIEW_CASE / DISPUTE_CASE / SUPPORT_TICKET
+
+    title VARCHAR(255) NOT NULL,
+    content TEXT NULL,
+
+    target_type VARCHAR(64) NOT NULL,
+    target_id VARCHAR(64) NOT NULL,
+
+    priority VARCHAR(32) NOT NULL DEFAULT 'NORMAL',
+    -- LOW / NORMAL / HIGH / URGENT
+
+    status VARCHAR(32) NOT NULL DEFAULT 'UNREAD',
+    -- UNREAD / READ / DONE
+
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    read_at DATETIME NULL,
+
+    INDEX idx_admin_notifications_status (status),
+    INDEX idx_admin_notifications_target (target_type, target_id)
+);
+```
+
+---
+
+## 11. Java 后端职责
+
+Java 仍然是业务主后端。
+
+Java 负责：
+
+```text
+商家提交申请
+商家新增 skill / agent
+用户联系客服
+用户发起纠纷
+Admin 后台审核
+最终业务状态修改
+退款 / 放款 / 合约调用
+审核类 24h 自动采纳
+```
+
+建议新增 Admin 接口：
+
+```text
+GET  /api/admin/reviews
+GET  /api/admin/reviews/{reviewId}
+POST /api/admin/reviews/{reviewId}/approve
+POST /api/admin/reviews/{reviewId}/reject
+POST /api/admin/reviews/{reviewId}/request-change
+
+GET  /api/admin/disputes
+GET  /api/admin/disputes/{disputeId}
+POST /api/admin/disputes/{disputeId}/resolve
+POST /api/admin/disputes/{disputeId}/request-seller-response
+
+GET  /api/admin/support-tickets
+POST /api/admin/support-tickets/{ticketId}/reply
+POST /api/admin/support-tickets/{ticketId}/close
+```
+
+---
+
+## 12. 审核自动采纳任务
+
+Java 后端增加定时任务。
+
+执行周期：
+
+```text
+每 5 或 10 分钟执行一次
+```
+
+查询条件：
+
+```sql
+WHERE status = 'WAITING_HUMAN'
+AND auto_apply_enabled = true
+AND auto_apply_at <= NOW()
+```
+
+处理逻辑：
+
+```text
+agent_decision = APPROVE
+  → review_case.status = AUTO_APPROVED
+  → 对应业务对象状态改为 APPROVED
+
+agent_decision = REJECT
+  → review_case.status = AUTO_REJECTED
+  → 对应业务对象状态改为 REJECTED
+
+agent_decision = MANUAL_REVIEW
+  → 不自动处理
+```
+
+Java 伪代码：
+
+```java
+@Scheduled(fixedDelay = 600000)
+public void autoApplyReviewCases() {
+    List<ReviewCase> cases = reviewCaseRepository.findExpiredAutoApplyCases(LocalDateTime.now());
+
+    for (ReviewCase reviewCase : cases) {
+        if ("APPROVE".equals(reviewCase.getAgentDecision())) {
+            reviewService.autoApprove(reviewCase);
+        } else if ("REJECT".equals(reviewCase.getAgentDecision())) {
+            reviewService.autoReject(reviewCase);
+        }
+    }
+}
+```
+
+---
+
+## 13. 部署方案
+
+项目路径：
+
+```text
+/root/Nicolas
+```
+
+### 13.1 推荐服务结构
+
+```text
+Nginx
+  ↓
+/root/Nicolas/frontend/dist
+
+Java Backend
+  127.0.0.1:8080
+  路径：/root/Nicolas/backend/java
+
+Python Agent Orchestrator
+  127.0.0.1:8000
+  路径：/root/Nicolas/backend/python
+
+MySQL
+  127.0.0.1:3306
+  DB：nicolas
+```
+
+公网只开放：
+
+```text
+80
+443
+```
+
+内部服务：
+
+```text
+Java:   127.0.0.1:8080
+Python: 127.0.0.1:8000
+MySQL:  127.0.0.1:3306
+```
+
+浏览器不直接访问 Python。
+
+```text
+Browser
+  ↓
+Nginx
+  ↓
+Java Backend
+  ↓
+Python Agent Orchestrator
+```
+
+---
+
+### 13.2 Python 服务安装
+
+```bash
+cd /root/Nicolas/backend/python
+
+python3 -m venv .venv
+source .venv/bin/activate
+
+pip install -r requirements.txt
+```
+
+如果加入 DB 写入，`requirements.txt` 增加：
+
+```text
+sqlalchemy
+pymysql
+jsonschema
+```
+
+测试启动：
+
+```bash
+cd /root/Nicolas/backend/python
+source .venv/bin/activate
+
+ANTHROPIC_API_KEY=你的key \
+DB_HOST=127.0.0.1 \
+DB_PORT=3306 \
+DB_NAME=nicolas \
+DB_USER=nicolas \
+DB_PASS=你的数据库密码 \
+INTERNAL_API_KEY=你的内部调用密钥 \
+uvicorn main:app --host 127.0.0.1 --port 8000
+```
+
+健康检查：
+
+```bash
+curl http://127.0.0.1:8000/api/health
+```
+
+---
+
+### 13.3 Python systemd 服务
+
+创建服务文件：
+
+```bash
+nano /etc/systemd/system/nicolas-agent.service
+```
+
+内容：
+
+```ini
+[Unit]
+Description=Nicolas Python Agent Orchestrator
+After=network.target mysql.service
+
+[Service]
+User=root
+WorkingDirectory=/root/Nicolas/backend/python
+ExecStart=/root/Nicolas/backend/python/.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000
+
+Restart=always
+RestartSec=5
+
+Environment=ANTHROPIC_API_KEY=你的AnthropicKey
+Environment=DB_HOST=127.0.0.1
+Environment=DB_PORT=3306
+Environment=DB_NAME=nicolas
+Environment=DB_USER=nicolas
+Environment=DB_PASS=你的数据库密码
+Environment=INTERNAL_API_KEY=换成一个随机内部密钥
+Environment=LOG_PATH=/root/Nicolas/backend/python/logs
+
+[Install]
+WantedBy=multi-user.target
+```
+
+启动：
+
+```bash
+systemctl daemon-reload
+systemctl enable nicolas-agent
+systemctl start nicolas-agent
+systemctl status nicolas-agent
+```
+
+查看日志：
+
+```bash
+journalctl -u nicolas-agent -f
+```
+
+---
+
+### 13.4 Java 服务配置
+
+构建 Java：
+
+```bash
+cd /root/Nicolas/backend/java
+mvn package -DskipTests
+```
+
+查看 jar：
+
+```bash
+ls /root/Nicolas/backend/java/target
+```
+
+创建服务：
+
+```bash
+nano /etc/systemd/system/nicolas-api.service
+```
+
+内容：
+
+```ini
+[Unit]
+Description=Nicolas Java Backend
+After=network.target mysql.service nicolas-agent.service
+
+[Service]
+User=root
+WorkingDirectory=/root/Nicolas/backend/java
+ExecStart=/usr/bin/java -jar /root/Nicolas/backend/java/target/nicolas-backend-0.1.0-SNAPSHOT.jar
+
+Restart=always
+RestartSec=5
+
+Environment=SERVER_PORT=8080
+Environment=DB_HOST=127.0.0.1
+Environment=DB_PORT=3306
+Environment=DB_NAME=nicolas
+Environment=DB_USER=nicolas
+Environment=DB_PASS=你的数据库密码
+
+Environment=PYTHON_BACKEND_URL=http://127.0.0.1:8000
+
+Environment=JWT_SECRET=换成一个随机32位以上字符串
+Environment=JWT_EXPIRATION_DAYS=7
+
+Environment=MAIL_DEV_MODE=true
+Environment=LOG_PATH=/root/Nicolas/backend/java/logs
+
+[Install]
+WantedBy=multi-user.target
+```
+
+启动：
+
+```bash
+systemctl daemon-reload
+systemctl enable nicolas-api
+systemctl restart nicolas-api
+systemctl status nicolas-api
+```
+
+查看日志：
+
+```bash
+journalctl -u nicolas-api -f
+```
+
+---
+
+### 13.5 前端构建
+
+```bash
+cd /root/Nicolas/frontend
+npm install
+npm run build
+```
+
+构建产物：
+
+```text
+/root/Nicolas/frontend/dist
+```
+
+---
+
+### 13.6 Nginx 配置
+
+创建配置：
+
+```bash
+nano /etc/nginx/sites-available/nicolas
+```
+
+内容：
+
+```nginx
+server {
+    listen 80;
+    server_name 你的服务器IP或域名;
+
+    root /root/Nicolas/frontend/dist;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:8080/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
+
+启用：
+
+```bash
+ln -s /etc/nginx/sites-available/nicolas /etc/nginx/sites-enabled/nicolas
+nginx -t
+systemctl reload nginx
+```
+
+---
+
+## 14. Agent 配置示例
+
+### 14.1 `/root/Nicolas/agent/agents/review_agent.yaml`
+
+```yaml
+name: review_agent
+description: Nicolas merchant, seller agent, and skill review agent
+version: v1
+
+task_types:
+  - merchant_application_review
+  - seller_agent_review
+  - seller_skill_review
+
+soul: |
+  You are the Nicolas platform review agent.
+  You review merchant applications and seller-submitted agents or skills.
+  You are strict, fair, and conservative.
+  You only make review recommendations.
+  You never modify business status directly.
+  You must return valid JSON only.
+
+rules:
+  - policies/review_rules.yaml
+
+knowledge:
+  - knowledge/merchant_onboarding.md
+  - knowledge/agent_listing_policy.md
+  - knowledge/prohibited_services.md
+
+output_schema: review_decision_v1
+
+decision_policy:
+  auto_apply_after_hours: 24
+  auto_apply_allowed_for:
+    - APPROVE
+    - REJECT
+  auto_apply_disabled_for:
+    - MANUAL_REVIEW
+```
+
+---
+
+### 14.2 `/root/Nicolas/agent/agents/support_agent.yaml`
+
+```yaml
+name: support_agent
+description: Nicolas customer support agent
+version: v1
+
+task_types:
+  - support_reply
+
+soul: |
+  You are the Nicolas platform support agent.
+  You answer user questions about accounts, orders, wallet, merchant onboarding, and platform rules.
+  You do not promise refunds.
+  You do not make final dispute decisions.
+  You do not ask users for private keys, seed phrases, passwords, or verification codes.
+  If the user is unsatisfied with delivery, requests refund, or complains about a seller, you must hand off to dispute_agent.
+  You must return valid JSON only.
+
+rules:
+  - policies/support_playbook.yaml
+
+knowledge:
+  - knowledge/support_faq.md
+  - knowledge/refund_policy.md
+  - knowledge/merchant_onboarding.md
+
+output_schema: support_reply_v1
+
+handoff_rules:
+  allowed_targets:
+    - dispute_agent
+    - human_admin
+```
+
+---
+
+### 14.3 `/root/Nicolas/agent/agents/dispute_agent.yaml`
+
+```yaml
+name: dispute_agent
+description: Nicolas refund and dispute precheck agent
+version: v1
+
+task_types:
+  - dispute_precheck
+
+soul: |
+  You are the Nicolas dispute precheck agent.
+  You read the order requirement, seller delivery, buyer complaint, support summary, and evidence.
+  You only provide a recommendation for admin review.
+  You never execute refunds.
+  You never release escrow funds.
+  You must return valid JSON only.
+
+rules:
+  - policies/dispute_rules.yaml
+
+knowledge:
+  - knowledge/refund_policy.md
+  - knowledge/dispute_policy.md
+
+output_schema: dispute_precheck_v1
+
+decision_policy:
+  auto_apply_allowed: false
+  requires_admin_confirmation: true
+```
+
+---
+
+## 15. MVP 开发顺序
+
+### 第一步：新增 3 个 Agent 配置
+
+```text
+/root/Nicolas/agent/agents/review_agent.yaml
+/root/Nicolas/agent/agents/support_agent.yaml
+/root/Nicolas/agent/agents/dispute_agent.yaml
+```
+
+---
+
+### 第二步：新增 Python Orchestrator 模块
+
+```text
+/root/Nicolas/backend/python/orchestrator/
+  agent_registry.py
+  task_router.py
+  agent_runner.py
+  schema_validator.py
+  handoff_manager.py
+  db.py
+```
+
+---
+
+### 第三步：新增规则和知识库
+
+```text
+/root/Nicolas/backend/python/policies/
+  review_rules.yaml
+  support_playbook.yaml
+  dispute_rules.yaml
+
+/root/Nicolas/backend/python/knowledge/
+  merchant_onboarding.md
+  agent_listing_policy.md
+  prohibited_services.md
+  support_faq.md
+  refund_policy.md
+  dispute_policy.md
+```
+
+---
+
+### 第四步：建 DB 表
+
+优先建：
+
+```text
+agent_tasks
+review_cases
+dispute_cases
+```
+
+第二阶段补：
+
+```text
+support_tickets
+admin_notifications
+```
+
+---
+
+### 第五步：打通审核链路
+
+```text
+商家申请
+  ↓
+Java 创建业务申请
+  ↓
+Java 调 Python review_agent
+  ↓
+Python 写 review_cases
+  ↓
+Admin 后台展示
+  ↓
+人工处理或 24h 自动采纳
+```
+
+---
+
+### 第六步：打通客服转纠纷链路
+
+```text
+用户联系客服
+  ↓
+support_agent 判断售后问题
+  ↓
+handoff_to_dispute
+  ↓
+Orchestrator 创建 dispute_case
+  ↓
+dispute_agent 预审
+  ↓
+Admin 后台展示
+```
+
+---
+
+## 16. 最终结论
+
+本阶段方案确定为：
+
+```text
+1. MVP 只做 3 个 Agent：
+   review_agent
+   support_agent
+   dispute_agent
+
+2. Agent 只做判断，不直接执行最终业务动作。
+
+3. 审核 Agent 的结果写入 review_cases。
+   人工可以快速处理。
+   24 小时未处理则自动采纳 Agent 的 APPROVE / REJECT 结果。
+
+4. 纠纷 Agent 的结果写入 dispute_cases。
+   纠纷不允许自动执行，必须由 Admin 后台人工确认。
+
+5. Python 负责 Agent Orchestrator：
+   管 Agent 配置、规则、知识库、输出 schema、handoff、DB 写入。
+
+6. Java 负责最终业务：
+   商家状态、skill / agent 状态、订单状态、退款、放款、合约调用。
+
+7. Agent 之间不直接通信。
+   通过 handoff JSON + Python Orchestrator 创建下一个 task。
+```

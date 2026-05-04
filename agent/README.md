@@ -1,6 +1,6 @@
 # Nicolas Agent System
 
-Nicolas 平台的内置 AI Agent 系统，由 Anthropic Claude 驱动。
+Nicolas 平台的内置 AI Agent 系统，由 Google Gemini 驱动（demo 阶段使用 Gemini 免费额度）。
 
 平台运行依赖**三个固定角色**的 Agent，共同支撑「商家入驻 → 上架 → 交易 → 纠纷」全流程：
 
@@ -27,18 +27,18 @@ pip install -r requirements.txt
 
 要求 Python 3.10+。
 
-### 2. 配置 LLM（Anthropic API Key）
+### 2. 配置 LLM（Gemini API Key）
 
 复制环境变量示例文件并填入真实 key：
 
 ```bash
 cp .env.example .env
-# 编辑 .env，填入 ANTHROPIC_API_KEY=sk-ant-...
+# 编辑 .env，填入 GEMINI_API_KEY=...
 ```
 
-`.env` 已经被根目录 `.gitignore` 排除，**不会**被提交。也可以选择直接 `export ANTHROPIC_API_KEY=...`，两种方式都支持。
+`.env` 已经被根目录 `.gitignore` 排除，**不会**被提交。也可以选择直接 `export GEMINI_API_KEY=...`，两种方式都支持。
 
-获取 key：<https://console.anthropic.com/>
+获取 key（免费、无需信用卡）：<https://aistudio.google.com/apikey>
 
 ### 3. 验证安装
 
@@ -72,7 +72,7 @@ python main.py clear-memory customer_service
 
 ### 默认模型
 
-`agent/base_agent.py` 中的 `DEFAULT_MODEL = "claude-sonnet-4-6"`。
+`agent/base_agent.py` 中的 `DEFAULT_MODEL = "gemini-2.5-flash"`。
 
 ### 按 Agent 单独覆盖
 
@@ -80,7 +80,7 @@ python main.py clear-memory customer_service
 
 ```yaml
 name: arbitrator
-model: claude-opus-4-7        # 仲裁案件价值高，用更强模型
+model: gemini-2.5-pro         # 仲裁案件价值高，用更强模型
 max_tokens: 2048
 soul: |
   ...
@@ -90,14 +90,14 @@ soul: |
 
 | Agent | 推荐模型 | 理由 |
 |---|---|---|
-| `auditor` | `claude-sonnet-4-6` | 审核量中等，需要稳定的结构化输出 |
-| `customer_service` | `claude-haiku-4-5` | 高频、轻量交互，优先成本与延迟 |
-| `arbitrator` | `claude-opus-4-7` | 单次决策金额可能较大，优先正确性 |
+| `auditor` | `gemini-2.5-flash` | 审核量中等，需要稳定的结构化输出 |
+| `customer_service` | `gemini-2.5-flash-lite` | 高频、轻量交互，优先成本与延迟 |
+| `arbitrator` | `gemini-2.5-pro` | 单次决策金额可能较大，优先正确性 |
 
-模型 ID 列表：
-- `claude-opus-4-7`
-- `claude-sonnet-4-6`（默认）
-- `claude-haiku-4-5-20251001`
+常用模型 ID：
+- `gemini-2.5-pro`
+- `gemini-2.5-flash`（默认）
+- `gemini-2.5-flash-lite`
 
 ---
 
@@ -107,7 +107,7 @@ soul: |
 agent/
 ├── main.py              CLI 入口（list / chat / ask / info / clear-memory）
 ├── agent_manager.py     扫描 agents/*.yaml 并实例化
-├── base_agent.py        BaseAgent：soul + memory + Anthropic 调用
+├── base_agent.py        BaseAgent：soul + memory + Gemini 调用
 ├── requirements.txt
 ├── .env.example         环境变量样例（复制为 .env 后填值）
 ├── memory/
@@ -216,7 +216,7 @@ agents:
 ```yaml
 name: my_agent
 description: 一句话说明
-model: claude-sonnet-4-6      # 可选
+model: gemini-2.5-flash       # 可选
 max_tokens: 1024              # 可选
 soul: |
   你是 ...

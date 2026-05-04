@@ -5,7 +5,7 @@ Each agent has:
   - A name and description (from YAML)
   - A soul (system prompt that defines its personality / behavior)
   - Persistent memory (short-term conversation + long-term facts)
-  - Access to the Anthropic Claude API
+  - Access to the Google Gemini API
 """
 
 from __future__ import annotations
@@ -13,15 +13,20 @@ from __future__ import annotations
 import os
 from typing import Any
 
-import anthropic
+from google import genai
+from google.genai import types as genai_types
 
 from memory.memory_store import MemoryStore
 
 # Default model to use for all agents.
 # Override per-agent in the YAML config with a `model` key.
-DEFAULT_MODEL = "claude-sonnet-4-6"
+# Recommended models:
+#   gemini-2.5-flash      (default — good quality / cost balance, generous free tier)
+#   gemini-2.5-pro        (highest quality, for arbitrator on high-value disputes)
+#   gemini-2.5-flash-lite (cheapest / fastest, for high-volume customer_service)
+DEFAULT_MODEL = "gemini-2.5-flash"
 
-# Max tokens to generate per response.
+# Max output tokens to generate per response.
 DEFAULT_MAX_TOKENS = 1024
 
 
@@ -49,14 +54,15 @@ class BaseAgent:
         # Memory — loaded from/saved to disk automatically.
         self.memory = MemoryStore(self.name)
 
-        # Anthropic client — reads ANTHROPIC_API_KEY from environment.
-        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        # Gemini client — reads GEMINI_API_KEY (or GOOGLE_API_KEY) from environment.
+        api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
         if not api_key:
             raise EnvironmentError(
-                "ANTHROPIC_API_KEY environment variable is not set. "
-                "Export it before running the agent system."
+                "GEMINI_API_KEY environment variable is not set. "
+                "Get a free key at https://aistudio.google.com/apikey "
+                "and export it (or put it in agent/.env) before running."
             )
-        self._client = anthropic.Anthropic(api_key=api_key)
+        self._client = genai.Client(api_key=api_key)
 
     # ------------------------------------------------------------------
     # Public API
@@ -72,18 +78,20 @@ class BaseAgent:
         # Persist the incoming user message
         self.memory.add_message("user", user_message)
 
-        # Build messages list from short-term memory
-        messages = self._build_messages()
+        # Build Gemini contents list from short-term memory
+        contents = self._build_contents()
 
-        # Call the Anthropic API
-        response = self._client.messages.create(
+        # Call the Gemini API. The soul becomes the system instruction.
+        response = self._client.models.generate_content(
             model=self.model,
-            max_tokens=self.max_tokens,
-            system=self.soul,
-            messages=messages,
+            contents=contents,
+            config=genai_types.GenerateContentConfig(
+                system_instruction=self.soul,
+                max_output_tokens=self.max_tokens,
+            ),
         )
 
-        reply = response.content[0].text
+        reply = response.text or ""
 
         # Persist the agent's reply
         self.memory.add_message("assistant", reply)
@@ -109,15 +117,20 @@ class BaseAgent:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _build_messages(self) -> list[dict[str, str]]:
+    def _build_contents(self) -> list[genai_types.Content]:
         """
-        Build the messages list for the API call from short-term memory.
+        Build the Gemini `contents` list from short-term memory.
 
-        The Anthropic API requires:
-          - messages must alternate between 'user' and 'assistant'
-          - the last message must be from 'user'
+        Memory stores roles as 'user' / 'assistant' (Anthropic-style).
+        Gemini expects 'user' / 'model'.
         """
-        return [
-            {"role": msg["role"], "content": msg["content"]}
-            for msg in self.memory.short_term
-        ]
+        contents: list[genai_types.Content] = []
+        for msg in self.memory.short_term:
+            role = "model" if msg["role"] == "assistant" else "user"
+            contents.append(
+                genai_types.Content(
+                    role=role,
+                    parts=[genai_types.Part.from_text(text=msg["content"])],
+                )
+            )
+        return contents

@@ -62,7 +62,7 @@ Nicolas is a full-stack AI agent platform split into four sub-projects:
 | Directory | Stack | Dev command |
 |-----------|-------|-------------|
 | `frontend/` | React 18 + TypeScript + Vite | `npm run dev` |
-| `agent/` | Python 3.10+, Anthropic SDK | `python main.py` |
+| `agent/` | Python 3.10+, Google Gemini SDK | `python main.py` |
 | `backend/java/` | Spring Boot 3.x, Java 17, Maven | `mvn spring-boot:run` |
 | `backend/python/` | FastAPI, Anthropic SDK | `uvicorn main:app --reload` |
 
@@ -90,7 +90,7 @@ Nicolas is a full-stack AI agent platform split into four sub-projects:
 ### General
 - All strings facing users should be in **English** unless the user changes language.
 - Use environment variables for secrets. Never hard-code API keys.
-- The primary AI provider is **Anthropic Claude** via the `anthropic` Python SDK.
+- The primary AI provider for the Python agent system (`agent/`) is **Google Gemini** via the `google-genai` Python SDK. The Python FastAPI backend (`backend/python/`) still uses Anthropic Claude.
 
 ### Frontend (`frontend/`)
 - TypeScript strict mode is enabled. All props and state must be typed.
@@ -103,8 +103,9 @@ Nicolas is a full-stack AI agent platform split into four sub-projects:
 - Agent memory is stored in `agent/memory/data/<name>.json` (excluded from git).
 - `BaseAgent` handles: soul loading, memory loading/saving, and message sending.
 - `AgentManager` handles: discovering YAML configs and instantiating agents.
-- Always use `anthropic.Anthropic()` (sync) client for the agent CLI.
-- Model: `claude-sonnet-4-5` or newer. Do not hardcode model names in agent configs; keep them in `base_agent.py`.
+- Always use `google.genai.Client()` (sync) for the agent CLI.
+- Model: `gemini-2.5-flash` or newer. Do not hardcode model names in agent configs; keep them in `base_agent.py`.
+- API key env var: `GEMINI_API_KEY` (falls back to `GOOGLE_API_KEY`). Free key at <https://aistudio.google.com/apikey>.
 
 ### Python FastAPI Backend (`backend/python/`)
 - Use `anthropic` SDK with **prompt caching** (`cache_control: {"type": "ephemeral"}`) on system prompts to reduce costs.
@@ -262,7 +263,7 @@ backend/java/sql/migration.sql
 
 ## Common Pitfalls
 
-- **Missing `ANTHROPIC_API_KEY`**: Both the agent system and the Python backend need this env var. Export it before running.
+- **Missing API keys**: the `agent/` system needs `GEMINI_API_KEY` (free at <https://aistudio.google.com/apikey>); the `backend/python/` FastAPI service needs `ANTHROPIC_API_KEY`. Export them or put them in the respective `.env` file.
 - **Port conflicts**: Frontend=5173, Python backend=8000, Java backend=8080.
 - **Agent memory directory**: `agent/memory/data/` is gitignored. Create it manually or let the memory store create it automatically on first run.
 - **Prompt caching**: Only available on Claude models that support it (claude-3+ family). Always add `cache_control` to system prompt content blocks for the Python backend.

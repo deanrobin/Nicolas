@@ -37,6 +37,24 @@ Nicolas 全平台只有 **3 种身份概念**，对应 `users.role` 字段共 4 
 - `service_provider` 同时是后端持有的链上**运营方钱包**（`OPERATOR_ADDRESS` / `OPERATOR_PRIVATE_KEY`）的所有者 —— "管理员账号"和"运营方钱包"在 Nicolas 里是**同一个角色**。
 - 后端运营接口前缀统一为 `/provider/**`，要求 `ROLE_SERVICE_PROVIDER`；不要再新增 `/admin/**`、`/operator/**` 等并行前缀。
 
+### 审核流程（**所有涉及商家 / 上架的功能必须遵守**）
+
+Nicolas 平台对**商家化**与**商品上架**强制走人工审核，由唯一的 `service_provider` 审批：
+
+| 动作 | 触发方 | 初始 status | 审核方 | 通过后 status |
+|---|---|---|---|---|
+| 买家升级为卖家（即"商家入驻"） | `buyer` 用户 | `pending` | `service_provider` | `approved` |
+| 卖家上架 Agent | 已审批的 `seller` | `pending` | `service_provider` | `approved` |
+| 卖家上架 Skill | 已审批的 `seller` | `pending` | `service_provider` | `approved` |
+
+**强制约定**：
+- `buyer` → `seller` **不能**通过 `PUT /auth/role` 直接切（普通自助升级是禁止的）。必须走"商家入驻"流程：用户先提交 `Merchant` 申请（`merchants.status='pending'`），由 `service_provider` 审批通过后，后端再把 `users.role` 改为 `seller`。
+- `Agent` / `Skill` 的 `listing.status` 默认 `pending`，**只有 `approved` 状态的 listing 才会出现在公开市场**（`/market/agents`、`/market/skills` 等买家可见接口必须带 `status='approved'` 过滤）。
+- 审批 / 拒绝接口归属 `service_provider` 后台，路径走 `/provider/**`，例如 `POST /provider/merchants/{id}/approve`、`POST /provider/listings/agents/{id}/approve`。
+- 拒绝必须带 `review_reason`（已在 `Merchant` / `AgentListing` / `SkillListing` 三张表中预留字段）。
+- 任何前端提交入口完成后必须给用户明确的"待审核"提示，避免用户以为已生效。
+- 这套流程**当前在后端尚未完全接通**（端点未实现），但 schema 已就绪；后续实现时直接遵循本节即可，**不要绕过审核**。
+
 ### 技术栈分仓
 
 Nicolas is a full-stack AI agent platform split into four sub-projects:

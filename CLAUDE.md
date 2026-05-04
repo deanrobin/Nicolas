@@ -18,6 +18,25 @@ Nicolas 是一个 AI Agent / Skill 服务市场，致敬 14 世纪炼金大师 N
 
 两类市场共用同一套 **AgentEscrow** 合约（订单粒度不同）+ 同一套用户/钱包系统。
 
+### 用户角色定位（**所有 AI 编程必须遵守此模型**）
+
+Nicolas 全平台只有 **3 种身份概念**，对应 `users.role` 字段共 4 个取值：
+
+| 中文称谓 | 代码 role 值 | 数量 | 说明 |
+|---|---|---|---|
+| **买家 / 普通用户** | `buyer` | 多 | 默认角色。注册后即为买家，是平台绝大多数用户。可购买 Agent / Skill。 |
+| **卖家 / 商家** | `seller` | 多 | 普通用户可升级为卖家来上架 Agent / Skill。即"商家"。 |
+| 既买又卖 | `both` | 多 | 同一账号同时具备买卖能力。 |
+| **服务商 / 平台管理员 / 平台方** | `service_provider` | **恰好 1** | 平台运营方，整个系统**唯一**。"管理员 / 管理者 / 平台方"在代码与文档里**统一**叫 `service_provider`，它**不是**卖家，**也不是**买家。 |
+
+**关键约定**（写代码 / 写文档 / 写 UI 文案时遵守）：
+- 凡说"管理员 / admin / 平台管理员 / 平台方 / 运营方 / 服务商" → 代码里就是 `service_provider`，**不要**新造 `admin` / `operator` / `platform` 等其他 role 值。
+- 普通用户 = 买家（buyer），不要把"普通用户"另作一类。
+- 商家 = 卖家（seller），不要把"商家"另作一类。
+- 全系统只能有 1 个 `service_provider`：DB 唯一索引 + 启动校验 + `AuthService` 守卫三重保证；只能由部署者通过 SQL bootstrap 设置（详见 [`docs/provider-backend.md`](docs/provider-backend.md)）。
+- `service_provider` 同时是后端持有的链上**运营方钱包**（`OPERATOR_ADDRESS` / `OPERATOR_PRIVATE_KEY`）的所有者 —— "管理员账号"和"运营方钱包"在 Nicolas 里是**同一个角色**。
+- 后端运营接口前缀统一为 `/provider/**`，要求 `ROLE_SERVICE_PROVIDER`；不要再新增 `/admin/**`、`/operator/**` 等并行前缀。
+
 ### 技术栈分仓
 
 Nicolas is a full-stack AI agent platform split into four sub-projects:

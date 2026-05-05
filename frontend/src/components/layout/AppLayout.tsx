@@ -57,7 +57,7 @@ export default function AppLayout() {
               key: 'provider',
               icon: <SettingOutlined />,
               label: 'Platform Admin',
-              onClick: () => navigate('/provider/dashboard'),
+              onClick: () => navigate('/admin/dashboard'),
             },
           ]
         : [
@@ -119,7 +119,7 @@ export default function AppLayout() {
             <Button
               size="middle"
               icon={<SettingOutlined />}
-              onClick={() => navigate('/provider/dashboard')}
+              onClick={() => navigate('/admin/dashboard')}
               style={{
                 background: 'linear-gradient(135deg, #764ba2, #667eea)',
                 border: 'none',

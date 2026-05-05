@@ -17,6 +17,15 @@ const { Title, Text, Paragraph } = Typography
 
 const CARD_COLORS = ['#fa8c16', '#13c2c2', '#eb2f96', '#722ed1', '#52c41a', '#2f54eb', '#d4b106', '#cf1322']
 
+const DEMO_SKILLS: SkillListing[] = [
+  { id: -1, merchantId: 0, name: 'Pro Trading Prompt Pack', description: '资深量化团队整理的 80+ 加密货币交易分析提示词，覆盖技术面、链上、宏观。一次买断，终身使用。', category: '提示词包 / Prompts', priceUsdt: '49', downloadUrl: null, tags: 'Prompts,Trading,Lifetime', status: 'approved', reviewReason: null, reviewedAt: null, createdAt: '', updatedAt: '' },
+  { id: -2, merchantId: 0, name: 'Customer Support Agent Recipe', description: '完整的客服 Agent 配置：YAML 角色 + 工具集成 + RAG 检索模板，开箱即用。', category: 'Agent 配方 / Recipe', priceUsdt: '99', downloadUrl: null, tags: 'Recipe,Customer,Lifetime', status: 'approved', reviewReason: null, reviewedAt: null, createdAt: '', updatedAt: '' },
+  { id: -3, merchantId: 0, name: 'Marketing Content Workflow', description: '6 步从主题→大纲→文案→SEO→封面图→排期的端到端营销工作流，已对接 Notion / Slack。', category: '工作流 / Workflow', priceUsdt: '79', downloadUrl: null, tags: 'Workflow,Marketing,Lifetime', status: 'approved', reviewReason: null, reviewedAt: null, createdAt: '', updatedAt: '' },
+  { id: -4, merchantId: 0, name: 'LoRA Fine-tune Recipe', description: '小模型 LoRA 微调脚本 + 数据处理模板 + 评估流程，10 美金算力即可跑通。', category: '微调配方 / Fine-tune', priceUsdt: '149', downloadUrl: null, tags: 'LoRA,Training,Lifetime', status: 'approved', reviewReason: null, reviewedAt: null, createdAt: '', updatedAt: '' },
+  { id: -5, merchantId: 0, name: 'Voice Clone Skill', description: '一键语音克隆技能包，3 秒样本生成自然语音，支持 12 种语言。', category: '语音 / Voice', priceUsdt: '69', downloadUrl: null, tags: 'Voice,Skill,Lifetime', status: 'approved', reviewReason: null, reviewedAt: null, createdAt: '', updatedAt: '' },
+  { id: -6, merchantId: 0, name: 'Financial RAG Template', description: '金融报告 RAG 模板，含数据切分策略、向量检索、引用追溯，对接主流向量库。', category: 'RAG 模板', priceUsdt: '129', downloadUrl: null, tags: 'RAG,Finance,Lifetime', status: 'approved', reviewReason: null, reviewedAt: null, createdAt: '', updatedAt: '' },
+]
+
 export default function SkillMarketPage() {
   const { hasWallet } = useAuthStore()
   const navigate = useNavigate()
@@ -28,9 +37,10 @@ export default function SkillMarketPage() {
     setLoading(true)
     try {
       const data = await marketApi.skills()
-      setSkills(data)
+      setSkills([...data, ...DEMO_SKILLS])
     } catch (err) {
       message.error(err instanceof Error ? err.message : 'Failed to load skills')
+      setSkills([...DEMO_SKILLS])
     } finally {
       setLoading(false)
     }

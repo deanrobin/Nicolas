@@ -17,6 +17,15 @@ const { Title, Text, Paragraph } = Typography
 
 const CARD_COLORS = ['#667eea', '#764ba2', '#f093fb', '#4facfe', '#43e97b', '#f5a623', '#30cfcf', '#eb2f96']
 
+const DEMO_AGENTS: AgentListing[] = [
+  { id: -1, merchantId: 0, name: 'Moon Tarot Agent', description: 'Professional tarot readings — single card, three-card spreads, Celtic cross. Detailed AI interpretations.', category: '占卜 / Divination', priceUsdt: '0.5', apiEndpoint: null, tags: 'Tarot,Spiritual,Escrow', status: 'approved', reviewReason: null, reviewedAt: null, createdAt: '', updatedAt: '' },
+  { id: -2, merchantId: 0, name: 'Emotion Analysis AI', description: 'Deep emotional analysis of text, conversations, or situations. Personalized insights and suggestions.', category: '情感分析 / Emotional', priceUsdt: '1.0', apiEndpoint: null, tags: 'Emotion,Analysis,Escrow', status: 'approved', reviewReason: null, reviewedAt: null, createdAt: '', updatedAt: '' },
+  { id: -3, merchantId: 0, name: 'Web3 Risk Analyst', description: 'Smart contract audits, token analysis, project risk scores. On-chain data interpretation.', category: 'Web3 分析 / Analysis', priceUsdt: '2.0', apiEndpoint: null, tags: 'Web3,DeFi,Escrow', status: 'approved', reviewReason: null, reviewedAt: null, createdAt: '', updatedAt: '' },
+  { id: -4, merchantId: 0, name: 'Resume Doctor', description: 'AI-powered resume review and optimization. ATS-friendly rewrites, keyword suggestions.', category: '职业 / Career', priceUsdt: '3.0', apiEndpoint: null, tags: 'Career,Resume,Escrow', status: 'approved', reviewReason: null, reviewedAt: null, createdAt: '', updatedAt: '' },
+  { id: -5, merchantId: 0, name: 'BaZi Destiny Master', description: 'Traditional Chinese BaZi (Four Pillars) destiny analysis. Comprehensive life path readings.', category: '命理 / Astrology', priceUsdt: '1.5', apiEndpoint: null, tags: 'BaZi,Astrology,Escrow', status: 'approved', reviewReason: null, reviewedAt: null, createdAt: '', updatedAt: '' },
+  { id: -6, merchantId: 0, name: 'Contract Summarizer', description: 'Upload any contract PDF — get plain-language summaries, key clauses, and risk flags.', category: '法务 / Legal', priceUsdt: '2.5', apiEndpoint: null, tags: 'Legal,PDF,Escrow', status: 'approved', reviewReason: null, reviewedAt: null, createdAt: '', updatedAt: '' },
+]
+
 export default function AgentMarketPage() {
   const { hasWallet } = useAuthStore()
   const navigate = useNavigate()
@@ -28,9 +37,10 @@ export default function AgentMarketPage() {
     setLoading(true)
     try {
       const data = await marketApi.agents()
-      setAgents(data)
+      setAgents([...data, ...DEMO_AGENTS])
     } catch (err) {
       message.error(err instanceof Error ? err.message : 'Failed to load agents')
+      setAgents([...DEMO_AGENTS])
     } finally {
       setLoading(false)
     }

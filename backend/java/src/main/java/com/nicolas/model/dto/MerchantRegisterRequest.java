@@ -6,10 +6,11 @@ import jakarta.validation.constraints.Size;
 public class MerchantRegisterRequest {
 
     @NotBlank
-    @Size(max = 100)
+    @Size(min = 2, max = 100)
     private String brandName;
 
-    @Size(max = 2000)
+    @NotBlank
+    @Size(min = 20, max = 5000)
     private String description;
 
     @Size(max = 255)

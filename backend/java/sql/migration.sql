@@ -139,3 +139,24 @@ ALTER TABLE users
 
 -- Bootstrap：把指定邮箱提升为唯一服务商（手动改邮箱后执行）
 -- UPDATE users SET role = 'service_provider' WHERE email = 'ops@your-domain.com';
+
+
+-- [2026-05-05] V004 审核状态机扩展：新增 init / needs_human
+-- 列定义不变（VARCHAR(20)），仅修订 COMMENT 让 schema 文档与实际状态机对齐。
+--   pending      submitted, waiting for the auditor worker
+--   init         user is editing; worker MUST NOT pick this row
+--   approved     auditor accepted; visible on the public marketplace
+--   rejected     auditor rejected; user may edit & resubmit
+--   needs_human  auditor low confidence; service_provider must decide
+-- 已有数据无需迁移，旧值（pending/approved/rejected）继续合法。
+ALTER TABLE merchants
+    MODIFY COLUMN status VARCHAR(20) NOT NULL DEFAULT 'pending'
+    COMMENT 'pending | init | approved | rejected | needs_human';
+
+ALTER TABLE agent_listings
+    MODIFY COLUMN status VARCHAR(20) NOT NULL DEFAULT 'pending'
+    COMMENT 'pending | init | approved | rejected | needs_human';
+
+ALTER TABLE skill_listings
+    MODIFY COLUMN status VARCHAR(20) NOT NULL DEFAULT 'pending'
+    COMMENT 'pending | init | approved | rejected | needs_human';

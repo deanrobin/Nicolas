@@ -143,6 +143,40 @@ info:
     name: Nicolas
     version: 0.1.0
 
+# ── 内容审核规则（与 agent/worker/audit_rules.yaml 保持一致）────────────────
+# 改这里 = 改 Python worker：两边的阈值与黑名单必须同步。
+# Java 端在请求入口拒掉违规内容；worker 兜底再扫一遍 DB。
+nicolas:
+  audit:
+    name:
+      min-length: 2
+      max-length: 100
+    description:
+      min-length: 20
+      max-length: 5000
+    price:
+      min: 0.01
+      max: 10000
+    blacklist-keywords:
+      - 赌博
+      - 博彩
+      - 彩票
+      - 色情
+      - 涉黄
+      - 成人内容
+      - 武器
+      - 枪支
+      - 毒品
+      - 诈骗
+      - 传销
+      - 庞氏
+      - ponzi
+      - 洗钱
+      - 政治敏感
+      - 仇恨
+      - 恐怖
+      - 自杀
+
 # ── 日志 ──────────────────────────────────────────────────────────────────
 logging:
   level:

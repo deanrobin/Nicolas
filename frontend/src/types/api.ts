@@ -9,9 +9,17 @@ export interface ApiResponse<T = null> {
 export interface AuthUser {
   userId: number
   nickname: string
-  role: 'buyer' | 'seller' | 'both'
+  role: 'buyer' | 'seller' | 'both' | 'service_provider'
   emailVerified: boolean
   walletAddress: string | null
+}
+
+// ── Provider review types ─────────────────────────────────────────────────
+export interface ProviderStats {
+  users: number
+  merchants: { total: number; pending: number; approved: number; rejected: number }
+  agents: { total: number; pending: number; approved: number; rejected: number }
+  skills: { total: number; pending: number; approved: number; rejected: number }
 }
 
 export interface AuthResponse extends AuthUser {

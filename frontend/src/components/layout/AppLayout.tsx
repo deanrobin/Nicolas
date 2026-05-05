@@ -6,6 +6,7 @@ import {
   WalletOutlined,
   UserOutlined,
   ShopOutlined,
+  SettingOutlined,
 } from '@ant-design/icons'
 import { useEffect, useState } from 'react'
 import { merchantApi } from '../../api/client'
@@ -46,21 +47,34 @@ export default function AppLayout() {
     { key: '/skills', icon: <ShoppingOutlined />, label: 'Skill Market' },
   ]
 
+  const isProvider = user?.role === 'service_provider'
+
   const dropdownItems = {
     items: [
-      isMerchant
-        ? {
-            key: 'seller',
-            icon: <ShopOutlined />,
-            label: 'Seller Dashboard',
-            onClick: () => navigate('/seller/dashboard'),
-          }
-        : {
-            key: 'become-seller',
-            icon: <ShopOutlined />,
-            label: 'Become a Seller',
-            onClick: () => navigate('/seller/register'),
-          },
+      ...(isProvider
+        ? [
+            {
+              key: 'provider',
+              icon: <SettingOutlined />,
+              label: 'Platform Admin',
+              onClick: () => navigate('/provider/dashboard'),
+            },
+          ]
+        : [
+            isMerchant
+              ? {
+                  key: 'seller',
+                  icon: <ShopOutlined />,
+                  label: 'Seller Dashboard',
+                  onClick: () => navigate('/seller/dashboard'),
+                }
+              : {
+                  key: 'become-seller',
+                  icon: <ShopOutlined />,
+                  label: 'Become a Seller',
+                  onClick: () => navigate('/seller/register'),
+                },
+          ]),
       {
         key: 'wallet',
         icon: <WalletOutlined />,
@@ -101,7 +115,23 @@ export default function AppLayout() {
 
         {/* Right: seller cta + wallet status + avatar */}
         <Space size="middle">
-          {isMerchant ? (
+          {isProvider ? (
+            <Button
+              size="middle"
+              icon={<SettingOutlined />}
+              onClick={() => navigate('/provider/dashboard')}
+              style={{
+                background: 'linear-gradient(135deg, #764ba2, #667eea)',
+                border: 'none',
+                color: '#fff',
+                fontWeight: 600,
+                borderRadius: 999,
+                paddingInline: 16,
+              }}
+            >
+              Platform Admin
+            </Button>
+          ) : isMerchant ? (
             <Button
               size="middle"
               icon={<ShopOutlined />}

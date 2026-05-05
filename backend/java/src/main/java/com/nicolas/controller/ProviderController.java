@@ -3,11 +3,15 @@ package com.nicolas.controller;
 import com.alibaba.fastjson2.JSONObject;
 import com.nicolas.config.ChainConfig;
 import com.nicolas.model.dto.ApiResponse;
+import com.nicolas.model.entity.AgentListing;
+import com.nicolas.model.entity.Merchant;
+import com.nicolas.model.entity.SkillListing;
 import com.nicolas.repository.AgentListingRepository;
 import com.nicolas.repository.MerchantRepository;
 import com.nicolas.repository.SkillListingRepository;
 import com.nicolas.repository.UserRepository;
 import com.nicolas.service.ChainQueryService;
+import com.nicolas.service.MerchantService;
 import com.nicolas.service.OnchainOsClient;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -31,6 +35,7 @@ public class ProviderController {
     private final MerchantRepository merchantRepo;
     private final AgentListingRepository agentRepo;
     private final SkillListingRepository skillRepo;
+    private final MerchantService merchantService;
     private final ChainQueryService chain;
     private final ChainConfig chainConfig;
     private final OnchainOsClient onchainOs;
@@ -39,6 +44,7 @@ public class ProviderController {
                            MerchantRepository merchantRepo,
                            AgentListingRepository agentRepo,
                            SkillListingRepository skillRepo,
+                           MerchantService merchantService,
                            ChainQueryService chain,
                            ChainConfig chainConfig,
                            OnchainOsClient onchainOs) {
@@ -46,6 +52,7 @@ public class ProviderController {
         this.merchantRepo = merchantRepo;
         this.agentRepo = agentRepo;
         this.skillRepo = skillRepo;
+        this.merchantService = merchantService;
         this.chain = chain;
         this.chainConfig = chainConfig;
         this.onchainOs = onchainOs;
@@ -141,5 +148,59 @@ public class ProviderController {
     @GetMapping("/onchain/tx/{hash}")
     public ResponseEntity<ApiResponse<JSONObject>> txStatus(@PathVariable String hash) {
         return ResponseEntity.ok(ApiResponse.ok(onchainOs.getTxStatus(hash)));
+    }
+
+    // ── Review queue (pending + needs_human) ─────────────────────────────
+
+    @GetMapping("/review/merchants")
+    public ResponseEntity<ApiResponse<java.util.List<Merchant>>> reviewMerchants() {
+        return ResponseEntity.ok(ApiResponse.ok(merchantService.getReviewQueueMerchants()));
+    }
+
+    @GetMapping("/review/agents")
+    public ResponseEntity<ApiResponse<java.util.List<AgentListing>>> reviewAgents() {
+        return ResponseEntity.ok(ApiResponse.ok(merchantService.getReviewQueueAgents()));
+    }
+
+    @GetMapping("/review/skills")
+    public ResponseEntity<ApiResponse<java.util.List<SkillListing>>> reviewSkills() {
+        return ResponseEntity.ok(ApiResponse.ok(merchantService.getReviewQueueSkills()));
+    }
+
+    // ── Approve / Reject ─────────────────────────────────────────────────
+
+    public record ReviewDecision(String reason) {}
+
+    @PostMapping("/merchants/{id}/approve")
+    public ResponseEntity<ApiResponse<Merchant>> approveMerchant(@PathVariable Long id) {
+        return ResponseEntity.ok(ApiResponse.ok(merchantService.approveMerchant(id)));
+    }
+
+    @PostMapping("/merchants/{id}/reject")
+    public ResponseEntity<ApiResponse<Merchant>> rejectMerchant(
+            @PathVariable Long id, @RequestBody ReviewDecision body) {
+        return ResponseEntity.ok(ApiResponse.ok(merchantService.rejectMerchant(id, body.reason())));
+    }
+
+    @PostMapping("/listings/agents/{id}/approve")
+    public ResponseEntity<ApiResponse<AgentListing>> approveAgent(@PathVariable Long id) {
+        return ResponseEntity.ok(ApiResponse.ok(merchantService.approveAgent(id)));
+    }
+
+    @PostMapping("/listings/agents/{id}/reject")
+    public ResponseEntity<ApiResponse<AgentListing>> rejectAgent(
+            @PathVariable Long id, @RequestBody ReviewDecision body) {
+        return ResponseEntity.ok(ApiResponse.ok(merchantService.rejectAgent(id, body.reason())));
+    }
+
+    @PostMapping("/listings/skills/{id}/approve")
+    public ResponseEntity<ApiResponse<SkillListing>> approveSkill(@PathVariable Long id) {
+        return ResponseEntity.ok(ApiResponse.ok(merchantService.approveSkill(id)));
+    }
+
+    @PostMapping("/listings/skills/{id}/reject")
+    public ResponseEntity<ApiResponse<SkillListing>> rejectSkill(
+            @PathVariable Long id, @RequestBody ReviewDecision body) {
+        return ResponseEntity.ok(ApiResponse.ok(merchantService.rejectSkill(id, body.reason())));
     }
 }

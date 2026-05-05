@@ -7,9 +7,11 @@ import com.nicolas.model.dto.SkillListingRequest;
 import com.nicolas.model.entity.AgentListing;
 import com.nicolas.model.entity.Merchant;
 import com.nicolas.model.entity.SkillListing;
+import com.nicolas.model.entity.User;
 import com.nicolas.repository.AgentListingRepository;
 import com.nicolas.repository.MerchantRepository;
 import com.nicolas.repository.SkillListingRepository;
+import com.nicolas.repository.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,18 +35,23 @@ public class MerchantService {
      */
     private static final Set<String> EDITABLE_FROM = Set.of("pending", "rejected");
 
+    private static final List<String> REVIEW_QUEUE_STATUSES = List.of("pending", "needs_human");
+
     private final MerchantRepository merchantRepo;
     private final AgentListingRepository agentRepo;
     private final SkillListingRepository skillRepo;
+    private final UserRepository userRepo;
     private final ContentValidator validator;
 
     public MerchantService(MerchantRepository merchantRepo,
                            AgentListingRepository agentRepo,
                            SkillListingRepository skillRepo,
+                           UserRepository userRepo,
                            ContentValidator validator) {
         this.merchantRepo = merchantRepo;
         this.agentRepo = agentRepo;
         this.skillRepo = skillRepo;
+        this.userRepo = userRepo;
         this.validator = validator;
     }
 
@@ -266,6 +273,12 @@ public class MerchantService {
         m.setStatus(result);
         m.setReviewReason(reason);
         m.setReviewedAt(LocalDateTime.now());
+        if ("approved".equals(result)) {
+            userRepo.findById(m.getUserId()).ifPresent(u -> {
+                if ("buyer".equals(u.getRole())) u.setRole("seller");
+                else if (!"seller".equals(u.getRole()) && !"service_provider".equals(u.getRole())) u.setRole("both");
+            });
+        }
     }
 
     @Transactional
@@ -284,6 +297,83 @@ public class MerchantService {
         s.setStatus(result);
         s.setReviewReason(reason);
         s.setReviewedAt(LocalDateTime.now());
+    }
+
+    // ── Provider review queue ─────────────────────────────────────────────
+
+    public List<Merchant> getReviewQueueMerchants() {
+        return merchantRepo.findByStatusInOrderByCreatedAtAsc(REVIEW_QUEUE_STATUSES);
+    }
+
+    public List<AgentListing> getReviewQueueAgents() {
+        return agentRepo.findByStatusInOrderByCreatedAtAsc(REVIEW_QUEUE_STATUSES);
+    }
+
+    public List<SkillListing> getReviewQueueSkills() {
+        return skillRepo.findByStatusInOrderByCreatedAtAsc(REVIEW_QUEUE_STATUSES);
+    }
+
+    @Transactional
+    public Merchant approveMerchant(Long id) {
+        Merchant m = merchantRepo.findById(id)
+                .orElseThrow(() -> BizException.notFound("Merchant not found"));
+        m.setStatus("approved");
+        m.setReviewReason(null);
+        m.setReviewedAt(LocalDateTime.now());
+        userRepo.findById(m.getUserId()).ifPresent(u -> {
+            if ("buyer".equals(u.getRole())) u.setRole("seller");
+        });
+        return merchantRepo.save(m);
+    }
+
+    @Transactional
+    public Merchant rejectMerchant(Long id, String reason) {
+        Merchant m = merchantRepo.findById(id)
+                .orElseThrow(() -> BizException.notFound("Merchant not found"));
+        m.setStatus("rejected");
+        m.setReviewReason(reason);
+        m.setReviewedAt(LocalDateTime.now());
+        return merchantRepo.save(m);
+    }
+
+    @Transactional
+    public AgentListing approveAgent(Long id) {
+        AgentListing a = agentRepo.findById(id)
+                .orElseThrow(() -> BizException.notFound("Agent listing not found"));
+        a.setStatus("approved");
+        a.setReviewReason(null);
+        a.setReviewedAt(LocalDateTime.now());
+        return agentRepo.save(a);
+    }
+
+    @Transactional
+    public AgentListing rejectAgent(Long id, String reason) {
+        AgentListing a = agentRepo.findById(id)
+                .orElseThrow(() -> BizException.notFound("Agent listing not found"));
+        a.setStatus("rejected");
+        a.setReviewReason(reason);
+        a.setReviewedAt(LocalDateTime.now());
+        return agentRepo.save(a);
+    }
+
+    @Transactional
+    public SkillListing approveSkill(Long id) {
+        SkillListing s = skillRepo.findById(id)
+                .orElseThrow(() -> BizException.notFound("Skill listing not found"));
+        s.setStatus("approved");
+        s.setReviewReason(null);
+        s.setReviewedAt(LocalDateTime.now());
+        return skillRepo.save(s);
+    }
+
+    @Transactional
+    public SkillListing rejectSkill(Long id, String reason) {
+        SkillListing s = skillRepo.findById(id)
+                .orElseThrow(() -> BizException.notFound("Skill listing not found"));
+        s.setStatus("rejected");
+        s.setReviewReason(reason);
+        s.setReviewedAt(LocalDateTime.now());
+        return skillRepo.save(s);
     }
 
     // 公开 marketplace 列表（仅 approved）

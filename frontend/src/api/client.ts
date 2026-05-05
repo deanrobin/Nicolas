@@ -7,6 +7,7 @@ import type {
   Merchant,
   MerchantRegisterRequest,
   MyListings,
+  ProviderStats,
   SkillListing,
   SkillListingRequest,
   UserWallet,
@@ -153,4 +154,38 @@ export const merchantApi = {
     }),
 
   myListings: () => request<MyListings>('/merchant/listings'),
+}
+
+// ── Provider (service_provider admin) ────────────────────────────────────
+
+export const providerApi = {
+  stats: () => request<ProviderStats>('/provider/stats'),
+
+  reviewMerchants: () => request<Merchant[]>('/provider/review/merchants'),
+  reviewAgents: () => request<AgentListing[]>('/provider/review/agents'),
+  reviewSkills: () => request<SkillListing[]>('/provider/review/skills'),
+
+  approveMerchant: (id: number) =>
+    request<Merchant>(`/provider/merchants/${id}/approve`, { method: 'POST' }),
+  rejectMerchant: (id: number, reason: string) =>
+    request<Merchant>(`/provider/merchants/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
+
+  approveAgent: (id: number) =>
+    request<AgentListing>(`/provider/listings/agents/${id}/approve`, { method: 'POST' }),
+  rejectAgent: (id: number, reason: string) =>
+    request<AgentListing>(`/provider/listings/agents/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
+
+  approveSkill: (id: number) =>
+    request<SkillListing>(`/provider/listings/skills/${id}/approve`, { method: 'POST' }),
+  rejectSkill: (id: number, reason: string) =>
+    request<SkillListing>(`/provider/listings/skills/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
 }

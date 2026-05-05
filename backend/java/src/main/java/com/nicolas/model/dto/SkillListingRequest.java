@@ -6,18 +6,19 @@ import java.math.BigDecimal;
 public class SkillListingRequest {
 
     @NotBlank
-    @Size(max = 100)
+    @Size(min = 2, max = 100)
     private String name;
 
     @NotBlank
-    @Size(max = 2000)
+    @Size(min = 20, max = 5000)
     private String description;
 
     @Size(max = 50)
     private String category;
 
     @NotNull
-    @DecimalMin(value = "0.0", inclusive = false)
+    @DecimalMin(value = "0.01", inclusive = true)
+    @DecimalMax(value = "10000", inclusive = true)
     private BigDecimal priceUsdt;
 
     @Size(max = 500)

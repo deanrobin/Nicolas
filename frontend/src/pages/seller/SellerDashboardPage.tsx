@@ -49,11 +49,11 @@ export default function SellerDashboardPage() {
   const reload = async () => {
     const m = await merchantApi.me()
     setMerchant(m)
-    if (m.status === 'approved') {
+    try {
       const list = await merchantApi.myListings()
       setAgents(list.agents || [])
       setSkills(list.skills || [])
-    } else {
+    } catch {
       setAgents([])
       setSkills([])
     }

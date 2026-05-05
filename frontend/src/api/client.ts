@@ -156,6 +156,13 @@ export const merchantApi = {
   myListings: () => request<MyListings>('/merchant/listings'),
 }
 
+// ── Public Market ─────────────────────────────────────────────────────────
+
+export const marketApi = {
+  agents: () => request<AgentListing[]>('/market/agents'),
+  skills: () => request<SkillListing[]>('/market/skills'),
+}
+
 // ── Provider (service_provider admin) ────────────────────────────────────
 
 export const providerApi = {

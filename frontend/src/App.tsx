@@ -6,8 +6,8 @@ import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import VerifyEmailPage from './pages/VerifyEmailPage'
 import OnboardingPage from './pages/OnboardingPage'
-import HomePage from './pages/HomePage'
-import SkillsPage from './pages/SkillsPage'
+import AgentMarketPage from './pages/AgentMarketPage'
+import SkillMarketPage from './pages/SkillMarketPage'
 import WalletPage from './pages/settings/WalletPage'
 import RegisterSellerPage from './pages/seller/RegisterSellerPage'
 import SellerDashboardPage from './pages/seller/SellerDashboardPage'
@@ -42,8 +42,9 @@ export default function App() {
             <Route
               element={<AuthGuard><AppLayout /></AuthGuard>}
             >
-              <Route path="/" element={<HomePage />} />
-              <Route path="/skills" element={<SkillsPage />} />
+              <Route path="/" element={<Navigate to="/market/agents" replace />} />
+              <Route path="/market/agents" element={<AgentMarketPage />} />
+              <Route path="/market/skills" element={<SkillMarketPage />} />
               <Route path="/seller/register" element={<RegisterSellerPage />} />
               <Route path="/seller/edit-profile" element={<RegisterSellerPage editMode />} />
               <Route path="/seller/dashboard" element={<SellerDashboardPage />} />
@@ -56,7 +57,7 @@ export default function App() {
             </Route>
 
             {/* Fallback */}
-            <Route path="*" element={<Navigate to="/" replace />} />
+            <Route path="*" element={<Navigate to="/market/agents" replace />} />
           </Routes>
         </BrowserRouter>
       </AntApp>

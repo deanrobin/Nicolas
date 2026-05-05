@@ -43,8 +43,8 @@ export default function AppLayout() {
   }
 
   const navItems = [
-    { key: '/', icon: <AppstoreOutlined />, label: 'Agent Market' },
-    { key: '/skills', icon: <ShoppingOutlined />, label: 'Skill Market' },
+    { key: '/market/agents', icon: <AppstoreOutlined />, label: 'Agent Market' },
+    { key: '/market/skills', icon: <ShoppingOutlined />, label: 'Skill Market' },
   ]
 
   const isProvider = user?.role === 'service_provider'

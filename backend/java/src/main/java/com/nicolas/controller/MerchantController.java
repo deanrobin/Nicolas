@@ -110,4 +110,5 @@ public class MerchantController {
         List<SkillListing> skills = service.getMySkills(userId);
         return ResponseEntity.ok(ApiResponse.ok(Map.of("agents", agents, "skills", skills)));
     }
+
 }

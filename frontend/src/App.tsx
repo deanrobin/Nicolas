@@ -13,6 +13,7 @@ import RegisterSellerPage from './pages/seller/RegisterSellerPage'
 import SellerDashboardPage from './pages/seller/SellerDashboardPage'
 import ListAgentPage from './pages/seller/ListAgentPage'
 import ListSkillPage from './pages/seller/ListSkillPage'
+import ProviderDashboardPage from './pages/provider/ProviderDashboardPage'
 
 const theme = {
   token: {
@@ -51,6 +52,7 @@ export default function App() {
               <Route path="/seller/list-skill" element={<ListSkillPage />} />
               <Route path="/seller/edit-skill/:id" element={<ListSkillPage />} />
               <Route path="/settings/wallet" element={<WalletPage />} />
+              <Route path="/provider/dashboard" element={<ProviderDashboardPage />} />
             </Route>
 
             {/* Fallback */}

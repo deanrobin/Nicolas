@@ -52,7 +52,7 @@ export default function App() {
               <Route path="/seller/list-skill" element={<ListSkillPage />} />
               <Route path="/seller/edit-skill/:id" element={<ListSkillPage />} />
               <Route path="/settings/wallet" element={<WalletPage />} />
-              <Route path="/provider/dashboard" element={<ProviderDashboardPage />} />
+              <Route path="/admin/dashboard" element={<ProviderDashboardPage />} />
             </Route>
 
             {/* Fallback */}

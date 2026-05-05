@@ -113,11 +113,48 @@ agent/
 ├── memory/
 │   ├── memory_store.py  JSON 持久化的对话记忆
 │   └── data/            每个 agent 的记忆文件（gitignore）
-└── agents/
-    ├── auditor.yaml          合法审核 Agent
-    ├── customer_service.yaml 客服机器人
-    └── arbitrator.yaml       仲裁机器人
+├── agents/
+│   ├── auditor.yaml          合法审核 Agent
+│   ├── customer_service.yaml 客服机器人
+│   └── arbitrator.yaml       仲裁机器人
+└── worker/              常驻审核 worker（python -m worker）
+    ├── runner.py        主轮询循环（默认 60s/次）
+    ├── processor.py     单表审核流水线
+    ├── prechecks.py     纯 Python 规则校验（不花 token）
+    ├── llm_review.py    auditor LLM 包装（结构化 JSON 输出）
+    ├── notify.py        飞书 webhook 通知
+    ├── db.py            pymysql 连接 / 查询 / 更新
+    ├── config.py        从环境变量 + audit_rules.yaml 加载配置
+    └── audit_rules.yaml 黑名单关键词、字段长度阈值、置信度阈值
 ```
+
+---
+
+## 三. 5、审核 Worker（auditor 实战形态）
+
+`auditor.yaml` 既给 CLI 用（手测），也给常驻 worker 用。worker 才是生产形态：
+
+- 每分钟轮询 MySQL 的 `merchants` / `agent_listings` / `skill_listings` 三张表
+- 找 `status='pending'` 的记录，先在 Python 里跑硬规则（字段长度 / 价格区间 / 黑名单关键词）—— **没数据 / 规则失败时完全不调用 LLM，不花 token**
+- 规则通过的才送给 auditor LLM 做内容审核
+- 根据 LLM 的 verdict + confidence 写回三种最终状态：
+  - `approved` —— 自动通过
+  - `rejected` —— 自动拒绝（review_reason 里写明原因）
+  - `needs_human` —— 置信度低 / 需要人工复核（service_provider 后台介入）
+- 每条结果发飞书通知
+
+启动：
+
+```bash
+# 前台跑（开发 / 调试）
+cd agent
+source .venv/bin/activate
+python -m worker
+```
+
+服务器常驻见 README 第六节的 systemd 模板，命令换成 `python -m worker` 即可。
+
+调整规则改 `worker/audit_rules.yaml`，重启 worker 生效。该文件提交到 git，可以多人协作迭代。
 
 ---
 

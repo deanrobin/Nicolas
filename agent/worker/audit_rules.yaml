@@ -1,0 +1,44 @@
+# Hardcoded audit rules for the deterministic precheck stage.
+# This file is committed to git and can be edited by the operator.
+# Changes take effect on the next worker restart.
+
+prechecks:
+  name:
+    min_length: 2
+    max_length: 100
+  description:
+    min_length: 20
+    max_length: 5000
+  price_usdt:
+    min: 0.01
+    max: 10000
+
+  # Case-insensitive substring match against name + description.
+  # If ANY of these appear, the record is auto-rejected by Python before
+  # any LLM call is made.
+  blacklist_keywords:
+    - 赌博
+    - 博彩
+    - 彩票
+    - 色情
+    - 涉黄
+    - 成人内容
+    - 武器
+    - 枪支
+    - 毒品
+    - 诈骗
+    - 传销
+    - 庞氏
+    - ponzi
+    - 洗钱
+    - 政治敏感
+    - 仇恨
+    - 恐怖
+    - 自杀
+
+llm:
+  # Below this confidence the worker marks the record as `needs_human`
+  # instead of auto-approving / auto-rejecting.
+  confidence_threshold: 0.7
+  # Per-call output cap. The auditor returns small JSON, 1024 is plenty.
+  max_output_tokens: 1024

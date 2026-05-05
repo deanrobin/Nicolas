@@ -33,7 +33,18 @@ export interface UserWallet {
 }
 
 // ── Merchant / Listings ──────────────────────────────────────────────────
-export type ReviewStatus = 'pending' | 'approved' | 'rejected'
+// Status state machine (mirrors backend MerchantService):
+//   pending      submitted, waiting for the auditor worker
+//   init         user is editing; worker keeps out
+//   approved     auditor accepted; visible on the public marketplace
+//   rejected     auditor rejected; user may edit & resubmit
+//   needs_human  auditor low confidence; service_provider must decide
+export type ReviewStatus =
+  | 'pending'
+  | 'init'
+  | 'approved'
+  | 'rejected'
+  | 'needs_human'
 
 export interface Merchant {
   id: number

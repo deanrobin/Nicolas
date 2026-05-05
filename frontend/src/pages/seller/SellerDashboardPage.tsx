@@ -4,13 +4,16 @@ import {
 } from 'antd'
 import {
   ShopOutlined,
-  PlusOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
   CloseCircleOutlined,
+  SyncOutlined,
+  UserOutlined,
+  EditOutlined,
   AppstoreAddOutlined,
   ShoppingOutlined,
 } from '@ant-design/icons'
+import { App as AntApp } from 'antd'
 import { useNavigate } from 'react-router-dom'
 import { merchantApi } from '../../api/client'
 import type { Merchant, AgentListing, SkillListing, ReviewStatus } from '../../types/api'
@@ -23,29 +26,44 @@ const statusTag = (s: ReviewStatus) => {
     return <Tag icon={<CheckCircleOutlined />} color="green">Approved</Tag>
   if (s === 'rejected')
     return <Tag icon={<CloseCircleOutlined />} color="red">Rejected</Tag>
+  if (s === 'init')
+    return <Tag icon={<EditOutlined />} color="blue">Editing</Tag>
+  if (s === 'needs_human')
+    return <Tag icon={<UserOutlined />} color="purple">Needs Human</Tag>
   return <Tag icon={<ClockCircleOutlined />} color="gold">Pending</Tag>
 }
 
+// Only pending / rejected / init listings are user-editable.
+// approved is live; needs_human waits for the platform admin.
+const isEditable = (s: ReviewStatus): boolean =>
+  s === 'pending' || s === 'rejected' || s === 'init'
+
 export default function SellerDashboardPage() {
   const navigate = useNavigate()
+  const { message } = AntApp.useApp()
   const [loading, setLoading] = useState(true)
   const [merchant, setMerchant] = useState<Merchant | null>(null)
   const [agents, setAgents] = useState<AgentListing[]>([])
   const [skills, setSkills] = useState<SkillListing[]>([])
 
+  const reload = async () => {
+    const m = await merchantApi.me()
+    setMerchant(m)
+    if (m.status === 'approved') {
+      const list = await merchantApi.myListings()
+      setAgents(list.agents || [])
+      setSkills(list.skills || [])
+    } else {
+      setAgents([])
+      setSkills([])
+    }
+  }
+
   useEffect(() => {
     let cancelled = false
     ;(async () => {
       try {
-        const m = await merchantApi.me()
-        if (cancelled) return
-        setMerchant(m)
-        if (m.status === 'approved') {
-          const list = await merchantApi.myListings()
-          if (cancelled) return
-          setAgents(list.agents || [])
-          setSkills(list.skills || [])
-        }
+        await reload()
       } catch {
         if (!cancelled) navigate('/seller/register', { replace: true })
         return
@@ -58,6 +76,19 @@ export default function SellerDashboardPage() {
     }
   }, [navigate])
 
+  const editMerchant = async () => {
+    if (!merchant) return
+    try {
+      // The page itself will claim if not yet 'init'; navigating is enough.
+      navigate('/seller/edit-profile')
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : 'Failed to start editing')
+    }
+  }
+
+  const editAgent = (id: number) => navigate(`/seller/edit-agent/${id}`)
+  const editSkill = (id: number) => navigate(`/seller/edit-skill/${id}`)
+
   if (loading) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', padding: '64px 0' }}>
@@ -69,6 +100,7 @@ export default function SellerDashboardPage() {
   if (!merchant) return null
 
   const isApproved = merchant.status === 'approved'
+  const merchantEditable = isEditable(merchant.status)
 
   const agentCols: ColumnsType<AgentListing> = [
     { title: 'Name', dataIndex: 'name' },
@@ -86,6 +118,16 @@ export default function SellerDashboardPage() {
       ),
     },
     { title: 'Submitted', dataIndex: 'createdAt' },
+    {
+      title: 'Action',
+      key: 'action',
+      render: (_, row) =>
+        isEditable(row.status) ? (
+          <Button size="small" icon={<EditOutlined />} onClick={() => editAgent(row.id)}>
+            修改 / Edit
+          </Button>
+        ) : null,
+    },
   ]
 
   const skillCols: ColumnsType<SkillListing> = [
@@ -104,6 +146,16 @@ export default function SellerDashboardPage() {
       ),
     },
     { title: 'Submitted', dataIndex: 'createdAt' },
+    {
+      title: 'Action',
+      key: 'action',
+      render: (_, row) =>
+        isEditable(row.status) ? (
+          <Button size="small" icon={<EditOutlined />} onClick={() => editSkill(row.id)}>
+            修改 / Edit
+          </Button>
+        ) : null,
+    },
   ]
 
   return (
@@ -111,11 +163,20 @@ export default function SellerDashboardPage() {
       <Title level={3}>
         <ShopOutlined style={{ marginRight: 8 }} />
         Seller Dashboard
+        <Button
+          type="text"
+          size="small"
+          icon={<SyncOutlined />}
+          onClick={() => reload()}
+          style={{ marginLeft: 12 }}
+        >
+          刷新 / Refresh
+        </Button>
       </Title>
 
       <Card style={{ borderRadius: 16, marginBottom: 24 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
+          <div style={{ flex: 1, marginRight: 24 }}>
             <Text strong style={{ fontSize: 18 }}>{merchant.brandName}</Text>
             <div style={{ marginTop: 4 }}>
               <Text type="secondary">{merchant.category} · {merchant.contactEmail}</Text>
@@ -124,13 +185,20 @@ export default function SellerDashboardPage() {
               {merchant.description}
             </Paragraph>
           </div>
-          <div style={{ textAlign: 'right' }}>
+          <div style={{ textAlign: 'right', minWidth: 200 }}>
             {statusTag(merchant.status)}
             {merchant.reviewReason && (
               <div style={{ marginTop: 8, maxWidth: 280 }}>
                 <Text type="secondary" style={{ fontSize: 12 }}>
                   {merchant.reviewReason}
                 </Text>
+              </div>
+            )}
+            {merchantEditable && (
+              <div style={{ marginTop: 12 }}>
+                <Button size="small" icon={<EditOutlined />} onClick={editMerchant}>
+                  修改 / Edit
+                </Button>
               </div>
             )}
           </div>
@@ -143,7 +211,11 @@ export default function SellerDashboardPage() {
           showIcon
           message={
             merchant.status === 'rejected'
-              ? 'Application rejected. You cannot list items at the moment.'
+              ? 'Application rejected. Click "修改 / Edit" above to revise and resubmit.'
+              : merchant.status === 'needs_human'
+              ? 'Your application needs human review by the platform.'
+              : merchant.status === 'init'
+              ? 'You are currently editing this application.'
               : 'Your application is under AI review. You can list items once approved.'
           }
           style={{ marginBottom: 24 }}

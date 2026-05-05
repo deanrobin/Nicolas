@@ -44,9 +44,12 @@ export default function App() {
               <Route path="/" element={<HomePage />} />
               <Route path="/skills" element={<SkillsPage />} />
               <Route path="/seller/register" element={<RegisterSellerPage />} />
+              <Route path="/seller/edit-profile" element={<RegisterSellerPage editMode />} />
               <Route path="/seller/dashboard" element={<SellerDashboardPage />} />
               <Route path="/seller/list-agent" element={<ListAgentPage />} />
+              <Route path="/seller/edit-agent/:id" element={<ListAgentPage />} />
               <Route path="/seller/list-skill" element={<ListSkillPage />} />
+              <Route path="/seller/edit-skill/:id" element={<ListSkillPage />} />
               <Route path="/settings/wallet" element={<WalletPage />} />
             </Route>
 

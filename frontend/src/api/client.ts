@@ -111,15 +111,44 @@ export const merchantApi = {
 
   me: () => request<Merchant>('/merchant/me'),
 
+  // Click "Edit" on the dashboard: flip status from pending|rejected -> init
+  claimMerchantEdit: () =>
+    request<Merchant>('/merchant/me/edit-claim', { method: 'POST' }),
+
+  // Save edits: requires status='init', validates content, flips back to pending
+  resubmitMerchant: (req: MerchantRegisterRequest) =>
+    request<Merchant>('/merchant/me', {
+      method: 'PUT',
+      body: JSON.stringify(req),
+    }),
+
   listAgent: (req: AgentListingRequest) =>
     request<AgentListing>('/merchant/agents', {
       method: 'POST',
       body: JSON.stringify(req),
     }),
 
+  claimAgentEdit: (id: number) =>
+    request<AgentListing>(`/merchant/agents/${id}/edit-claim`, { method: 'POST' }),
+
+  resubmitAgent: (id: number, req: AgentListingRequest) =>
+    request<AgentListing>(`/merchant/agents/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(req),
+    }),
+
   listSkill: (req: SkillListingRequest) =>
     request<SkillListing>('/merchant/skills', {
       method: 'POST',
+      body: JSON.stringify(req),
+    }),
+
+  claimSkillEdit: (id: number) =>
+    request<SkillListing>(`/merchant/skills/${id}/edit-claim`, { method: 'POST' }),
+
+  resubmitSkill: (id: number, req: SkillListingRequest) =>
+    request<SkillListing>(`/merchant/skills/${id}`, {
+      method: 'PUT',
       body: JSON.stringify(req),
     }),
 

@@ -177,3 +177,26 @@ ALTER TABLE skill_listings
         COMMENT '服务器存储路径（由平台托管的 Skill 文件）',
     ADD COLUMN service_input TEXT COMMENT '服务输入描述',
     ADD COLUMN service_output TEXT COMMENT '服务输出描述';
+
+
+-- [2026-05-06] V006 支付订单表（V1 平台钱包托管）
+-- 买家点击 Buy 创建订单 → 向平台钱包转账 → 提交 tx_hash → Job 验证 → 放款
+CREATE TABLE IF NOT EXISTS payment_orders (
+    id                      BIGINT        NOT NULL AUTO_INCREMENT,
+    order_type              VARCHAR(10)   NOT NULL COMMENT 'SKILL | AGENT',
+    listing_id              BIGINT        NOT NULL,
+    buyer_id                BIGINT        NOT NULL,
+    merchant_id             BIGINT        NOT NULL,
+    amount_usdt             DECIMAL(18,6) NOT NULL COMMENT '应付 USDT',
+    status                  VARCHAR(20)   NOT NULL DEFAULT 'pending_payment'
+                            COMMENT 'pending_payment | confirming | paid | delivered | refunded',
+    platform_wallet_address VARCHAR(42)   NOT NULL COMMENT '平台收款钱包地址',
+    tx_hash                 VARCHAR(66)   COMMENT '买家提交的链上 tx hash',
+    note                    VARCHAR(500),
+    created_at              DATETIME      NOT NULL,
+    updated_at              DATETIME      NOT NULL,
+    PRIMARY KEY (id),
+    KEY idx_payment_orders_buyer    (buyer_id),
+    KEY idx_payment_orders_listing  (listing_id),
+    KEY idx_payment_orders_status   (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

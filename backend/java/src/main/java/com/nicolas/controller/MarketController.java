@@ -1,6 +1,7 @@
 package com.nicolas.controller;
 
 import com.nicolas.config.ChainConfig;
+import com.nicolas.config.PaymentConfig;
 import com.nicolas.model.dto.ApiResponse;
 import com.nicolas.model.entity.AgentListing;
 import com.nicolas.model.entity.PaymentOrder;
@@ -24,15 +25,18 @@ public class MarketController {
     private final SkillListingRepository skillRepo;
     private final PaymentService paymentService;
     private final ChainConfig chainConfig;
+    private final PaymentConfig paymentConfig;
 
     public MarketController(AgentListingRepository agentRepo,
                             SkillListingRepository skillRepo,
                             PaymentService paymentService,
-                            ChainConfig chainConfig) {
+                            ChainConfig chainConfig,
+                            PaymentConfig paymentConfig) {
         this.agentRepo = agentRepo;
         this.skillRepo = skillRepo;
         this.paymentService = paymentService;
         this.chainConfig = chainConfig;
+        this.paymentConfig = paymentConfig;
     }
 
     @GetMapping("/agents")
@@ -55,6 +59,7 @@ public class MarketController {
         data.put("order", order);
         data.put("usdtAddress", chainConfig.getUsdtAddress());
         data.put("chainId", chainConfig.getChainId());
+        data.put("usdtDecimals", paymentConfig.getUsdtDecimals());
         return ResponseEntity.ok(ApiResponse.ok(data));
     }
 

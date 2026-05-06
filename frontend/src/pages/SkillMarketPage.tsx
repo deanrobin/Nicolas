@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
   Card, Col, Row, Tag, Typography, Button, Space, Badge, Spin, Empty,
-  Modal, Input, Steps, Alert, Divider,
+  Modal, Steps, Alert, Divider,
 } from 'antd'
 import {
   StarFilled,
@@ -11,11 +11,13 @@ import {
   SyncOutlined,
   CopyOutlined,
   CheckCircleOutlined,
+  ThunderboltOutlined,
 } from '@ant-design/icons'
 import { App as AntApp } from 'antd'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
 import { marketApi } from '../api/client'
+import { sendUsdtTransfer, getCurrentAddress } from '../lib/web3'
 import type { SkillListing, BuySkillResponse } from '../types/api'
 
 const { Title, Text, Paragraph } = Typography
@@ -32,39 +34,61 @@ function BuyModal({
   onClose: () => void
 }) {
   const { message } = AntApp.useApp()
-  const [step, setStep] = useState(0) // 0=instructions, 1=submit-tx, 2=done
-  const [txHash, setTxHash] = useState('')
-  const [submitting, setSubmitting] = useState(false)
+  // 0 = review, 1 = wallet signing, 2 = done
+  const [step, setStep] = useState(0)
+  const [paying, setPaying] = useState(false)
+  const [txHash, setTxHash] = useState<string | null>(null)
+  const [errMsg, setErrMsg] = useState<string | null>(null)
 
   useEffect(() => {
-    if (open) { setStep(0); setTxHash('') }
+    if (open) { setStep(0); setTxHash(null); setErrMsg(null) }
   }, [open])
 
   if (!info) return null
-  const { order, usdtAddress } = info
+  const { order, usdtAddress, chainId, usdtDecimals } = info
 
   const copyText = (text: string, label: string) => {
     navigator.clipboard.writeText(text).then(() => message.success(`${label} copied`))
   }
 
-  const handleSubmitTx = async () => {
-    if (!txHash.trim()) { message.warning('请粘贴交易 Hash / Please paste the tx hash'); return }
-    setSubmitting(true)
+  const handlePay = async () => {
+    setPaying(true)
+    setErrMsg(null)
     try {
-      await marketApi.submitTx(order.id, txHash.trim())
+      const fromAddress = await getCurrentAddress()
+      setStep(1)
+      const hash = await sendUsdtTransfer({
+        fromAddress,
+        toAddress: order.platformWalletAddress,
+        usdtAddress,
+        amount: order.amountUsdt,
+        decimals: usdtDecimals,
+        chainId,
+      })
+      // Record on backend; backend will schedule the payout job.
+      await marketApi.submitTx(order.id, hash)
+      setTxHash(hash)
       setStep(2)
-    } catch (err) {
-      message.error(err instanceof Error ? err.message : 'Submission failed')
+    } catch (err: unknown) {
+      const e = err as { code?: number; message?: string }
+      const userRejected = e.code === 4001 || (e.message || '').toLowerCase().includes('user rejected')
+      const msg = userRejected
+        ? '用户取消了交易 / Transaction rejected by user'
+        : (e.message || 'Transaction failed')
+      setErrMsg(msg)
+      setStep(0)
     } finally {
-      setSubmitting(false)
+      setPaying(false)
     }
   }
 
   return (
     <Modal
       open={open}
-      onCancel={onClose}
+      onCancel={paying ? undefined : onClose}
       footer={null}
+      maskClosable={!paying}
+      closable={!paying}
       title={
         <span>
           <ShoppingCartOutlined style={{ marginRight: 8, color: '#fa8c16' }} />
@@ -78,37 +102,44 @@ function BuyModal({
         current={step}
         style={{ marginBottom: 24 }}
         items={[
-          { title: '转账 / Transfer' },
-          { title: '提交 Hash / Submit' },
+          { title: '确认 / Review' },
+          { title: '钱包签名 / Sign' },
           { title: '完成 / Done' },
         ]}
       />
 
-      {step === 0 && (
+      {step !== 2 && (
         <div>
           <Alert
             type="info"
             showIcon
-            message="请在 XLayer 链上转账 USDT 到平台收款地址 / Send USDT on XLayer to the platform wallet"
+            message="点击下方按钮，钱包将弹出 USDT 转账请求 / Clicking pay will prompt your wallet to send USDT"
             style={{ marginBottom: 16 }}
           />
 
+          {errMsg && (
+            <Alert
+              type="error"
+              showIcon
+              closable
+              message={errMsg}
+              onClose={() => setErrMsg(null)}
+              style={{ marginBottom: 16 }}
+            />
+          )}
+
           <div style={boxStyle}>
             <Text type="secondary" style={{ fontSize: 12 }}>应付金额 / Amount</Text>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+            <div style={{ marginTop: 4 }}>
               <Text strong style={{ fontSize: 22, color: '#fa8c16' }}>{order.amountUsdt} USDT</Text>
-              <Button
-                size="small"
-                icon={<CopyOutlined />}
-                onClick={() => copyText(order.amountUsdt, 'Amount')}
-              />
+              <Text type="secondary" style={{ fontSize: 12, marginLeft: 12 }}>on X Layer (chainId {chainId})</Text>
             </div>
           </div>
 
           <div style={{ ...boxStyle, marginTop: 12 }}>
-            <Text type="secondary" style={{ fontSize: 12 }}>平台收款钱包 / Platform Wallet (XLayer)</Text>
+            <Text type="secondary" style={{ fontSize: 12 }}>平台收款钱包 / Platform Wallet</Text>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
-              <Text code style={{ fontSize: 13, wordBreak: 'break-all' }}>{order.platformWalletAddress}</Text>
+              <Text code style={{ fontSize: 13, wordBreak: 'break-all', flex: 1 }}>{order.platformWalletAddress}</Text>
               <Button
                 size="small"
                 icon={<CopyOutlined />}
@@ -118,14 +149,9 @@ function BuyModal({
           </div>
 
           <div style={{ ...boxStyle, marginTop: 12 }}>
-            <Text type="secondary" style={{ fontSize: 12 }}>USDT 合约地址 / USDT Contract (XLayer)</Text>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+            <Text type="secondary" style={{ fontSize: 12 }}>USDT 合约 / USDT Token</Text>
+            <div style={{ marginTop: 4 }}>
               <Text code style={{ fontSize: 12, wordBreak: 'break-all' }}>{usdtAddress}</Text>
-              <Button
-                size="small"
-                icon={<CopyOutlined />}
-                onClick={() => copyText(usdtAddress, 'USDT address')}
-              />
             </div>
           </div>
 
@@ -133,42 +159,19 @@ function BuyModal({
           <Text type="secondary" style={{ fontSize: 12 }}>
             订单号 Order ID: <Text code>{order.id}</Text>
           </Text>
-          <div style={{ marginTop: 16, textAlign: 'right' }}>
-            <Space>
-              <Button onClick={onClose}>取消 / Cancel</Button>
-              <Button type="primary" style={{ background: '#fa8c16', borderColor: '#fa8c16' }} onClick={() => setStep(1)}>
-                已转账，提交 Hash / Transferred, Submit Hash →
-              </Button>
-            </Space>
-          </div>
-        </div>
-      )}
 
-      {step === 1 && (
-        <div>
-          <Alert
-            type="warning"
-            showIcon
-            message="转账完成后，粘贴链上交易 Hash / After sending, paste the on-chain transaction hash"
-            style={{ marginBottom: 16 }}
-          />
-          <Input
-            size="large"
-            placeholder="0x..."
-            value={txHash}
-            onChange={e => setTxHash(e.target.value)}
-            style={{ fontFamily: 'monospace' }}
-          />
           <div style={{ marginTop: 16, textAlign: 'right' }}>
             <Space>
-              <Button onClick={() => setStep(0)}>← 返回 / Back</Button>
+              <Button onClick={onClose} disabled={paying}>取消 / Cancel</Button>
               <Button
                 type="primary"
-                loading={submitting}
-                onClick={handleSubmitTx}
+                size="large"
+                icon={<ThunderboltOutlined />}
+                loading={paying}
+                onClick={handlePay}
                 style={{ background: '#fa8c16', borderColor: '#fa8c16' }}
               >
-                提交确认 / Submit
+                {step === 1 ? '请在钱包确认… / Confirm in wallet…' : '使用钱包支付 / Pay with Wallet'}
               </Button>
             </Space>
           </div>
@@ -178,13 +181,22 @@ function BuyModal({
       {step === 2 && (
         <div style={{ textAlign: 'center', padding: '16px 0' }}>
           <CheckCircleOutlined style={{ fontSize: 48, color: '#52c41a', marginBottom: 16 }} />
-          <Title level={4}>支付已提交 / Payment Submitted</Title>
+          <Title level={4}>支付成功 / Payment Sent</Title>
           <Paragraph type="secondary">
-            平台正在验证链上交易，通常需要 5–20 分钟。
+            链上交易已发送，平台将在确认后释放交付物。
             <br />
-            Platform is verifying your transaction — usually 5–20 minutes.
+            Transaction broadcast. Funds will be released to the seller after the dispute window.
           </Paragraph>
-          <Paragraph type="secondary" style={{ fontSize: 12 }}>
+          {txHash && (
+            <div style={{ ...boxStyle, textAlign: 'left', marginTop: 16 }}>
+              <Text type="secondary" style={{ fontSize: 12 }}>Tx Hash</Text>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                <Text code style={{ fontSize: 12, wordBreak: 'break-all', flex: 1 }}>{txHash}</Text>
+                <Button size="small" icon={<CopyOutlined />} onClick={() => copyText(txHash, 'Tx hash')} />
+              </div>
+            </div>
+          )}
+          <Paragraph type="secondary" style={{ fontSize: 12, marginTop: 16 }}>
             Order ID: <Text code>{order.id}</Text>
           </Paragraph>
           <Button type="primary" onClick={onClose} style={{ marginTop: 8 }}>

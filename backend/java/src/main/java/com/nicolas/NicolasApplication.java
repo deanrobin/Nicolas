@@ -2,6 +2,7 @@ package com.nicolas;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * Nicolas Spring Boot Application entry point.
@@ -13,6 +14,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * <p>Default port: 8080
  */
 @SpringBootApplication
+@EnableScheduling
 public class NicolasApplication {
 
     public static void main(String[] args) {

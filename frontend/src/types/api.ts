@@ -173,6 +173,7 @@ export interface BuySkillResponse {
   order: PaymentOrder
   usdtAddress: string
   chainId: number
+  usdtDecimals: number
 }
 
 // ── window.ethereum (EIP-1193) ────────────────────────────────────────────

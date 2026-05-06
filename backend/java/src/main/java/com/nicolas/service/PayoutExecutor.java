@@ -4,6 +4,7 @@ import com.nicolas.config.ChainConfig;
 import com.nicolas.config.PaymentConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 import org.web3j.abi.FunctionEncoder;
 import org.web3j.abi.datatypes.Address;
@@ -38,7 +39,7 @@ public class PayoutExecutor {
     private final PaymentConfig paymentConfig;
 
     public PayoutExecutor(Web3j web3j,
-                          Credentials credentials,
+                          @Nullable Credentials credentials,
                           ChainConfig chainConfig,
                           PaymentConfig paymentConfig) {
         this.web3j = web3j;

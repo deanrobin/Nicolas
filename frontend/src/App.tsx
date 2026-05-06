@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { ConfigProvider, App as AntApp } from 'antd'
 import AppLayout from './components/layout/AppLayout'
 import AuthGuard from './components/AuthGuard'
+import NicolasHomePage from './pages/NicolasHomePage'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import VerifyEmailPage from './pages/VerifyEmailPage'
@@ -30,6 +31,7 @@ export default function App() {
         <BrowserRouter>
           <Routes>
             {/* Public routes */}
+            <Route path="/" element={<NicolasHomePage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/verify-email" element={<VerifyEmailPage />} />
@@ -42,7 +44,6 @@ export default function App() {
             <Route
               element={<AuthGuard><AppLayout /></AuthGuard>}
             >
-              <Route path="/" element={<Navigate to="/market/agents" replace />} />
               <Route path="/market/agents" element={<AgentMarketPage />} />
               <Route path="/market/skills" element={<SkillMarketPage />} />
               <Route path="/seller/register" element={<RegisterSellerPage />} />
@@ -57,7 +58,7 @@ export default function App() {
             </Route>
 
             {/* Fallback */}
-            <Route path="*" element={<Navigate to="/market/agents" replace />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>
       </AntApp>

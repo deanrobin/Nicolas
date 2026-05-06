@@ -16,7 +16,7 @@ Nicolas 是一个 AI Agent / Skill 服务市场，致敬 14 世纪炼金大师 N
 | **Agent Market** | 可调用的 AI Agent | 按次付费（pay-per-call，每次调用一笔订单） | 每次调用的 USDT 锁定，交付确认后释放 |
 | **Skill Market**  | Skill / 配方 / 提示词包 / 工作流模板 | 一次性买断（lifetime），下载即拥有 | 一次性 USDT 锁定，交付后释放 |
 
-两类市场共用同一套 **AgentEscrow** 合约（订单粒度不同）+ 同一套用户/钱包系统。
+两类市场共用同一套 **支付托管层**（V1 = 平台钱包托管，V2 = AgentEscrow 合约托管，订单粒度不同）+ 同一套用户/钱包系统。
 
 ### 用户角色定位（**所有 AI 编程必须遵守此模型**）
 
@@ -74,6 +74,25 @@ Nicolas is a full-stack AI agent platform split into four sub-projects:
 - **禁止直接提交到 `master` 分支。** 所有代码改动必须在独立子分支上开发，再通过 Pull Request 合并。
 - 分支命名建议：`feat/xxx`、`fix/xxx`、`chore/xxx`。
 - 紧急热修复使用 `hotfix/xxx` 分支，同样不得跳过 PR 流程。
+
+### 支付托管路线（**所有涉及支付 / 资金托管的功能必须遵守**）
+
+> 详细设计见 [`docs/Nicolas 支付托管 V1 平台钱包方案.MD`](docs/Nicolas%20支付托管%20V1%20平台钱包方案.MD)
+
+**V1 Demo / MVP 阶段强制约束**：
+
+- **V1 Escrow = 平台钱包托管**：买家向平台收款钱包转账，Java 后端 DB Ledger + Job 完成放款和退款。
+- **V2 Escrow = 智能合约托管**：V2 再升级为 `NicolasEscrowV2` 合约接管资金执行层。
+- **合约不是 Demo P0**：以下功能**不得**作为 V1 必要前置条件：
+  - 买家 `approve` Token
+  - 买家调用 `AgentEscrow.createOrder`
+  - 链上 `markDelivered / confirmDelivery / resolveDispute`
+  - 完整 event indexer / 合约审计 / 合约 verify
+- **新增代码优先**围绕 `payment_orders`、`payment_ledger`、`wallet_transactions`、`payout_jobs` 这四张核心表展开，而不是围绕合约调用。
+- **代码抽象**：建议使用 `PaymentEscrowLayer` 接口抽象资金执行层；V1 实现 `PlatformWalletEscrowService`，V2 实现 `ContractEscrowService`，使订单 / 交付 / 纠纷 / Admin 逻辑可以复用。
+- **`ESCROW_CONTRACT_ADDRESS`** 等合约环境变量标注为"V2 需要"，V1 Demo 不依赖，不启动时不报错。
+
+---
 
 ### 安全 / 敏感信息
 - **禁止在代码或配置文件中出现明文密码、API Key、私钥、Token、Secret 等敏感字段。**
@@ -169,9 +188,13 @@ com.nicolas/
 | `XLAYER_RPC_URL` | `https://rpc.xlayer.tech` | XLayer RPC endpoint |
 | `XLAYER_CHAIN_ID` | `196` | 196=mainnet, 195=testnet |
 | `XLAYER_USDT_ADDRESS` | (mainnet USDT) | ERC-20 USDT on XLayer |
-| `ESCROW_CONTRACT_ADDRESS` | — | Deployed `AgentEscrow` address |
-| `OPERATOR_ADDRESS` | — | Platform operator wallet (public) |
-| `OPERATOR_PRIVATE_KEY` | — | **Secret.** Operator key — server env only |
+| `PAYMENT_MODE` | `PLATFORM_WALLET` | V1=`PLATFORM_WALLET`；V2=`CONTRACT` |
+| `PLATFORM_WALLET_ADDRESS` | — | **V1** 平台收款钱包地址（公开） |
+| `PLATFORM_WALLET_PRIVATE_KEY` | — | **V1 Secret.** 平台钱包私钥，仅服务器 env |
+| `PAYOUT_JOB_ENABLED` | `true` | 是否启用放款 Job |
+| `ESCROW_CONTRACT_ADDRESS` | — | **V2 需要。** 已部署的 `NicolasEscrowV2` 地址 |
+| `OPERATOR_ADDRESS` | — | Platform operator wallet (public)；V2 为合约 owner |
+| `OPERATOR_PRIVATE_KEY` | — | **V2 Secret.** Operator key — server env only |
 | `ONCHAINOS_BASE_URL` | OKX wallet API | OnchainOS base URL |
 | `ONCHAINOS_API_KEY` | — | **Secret.** OK-ACCESS-KEY |
 | `ONCHAINOS_API_SECRET` | — | **Secret.** signing secret |

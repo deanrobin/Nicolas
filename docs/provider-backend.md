@@ -18,9 +18,11 @@ Nicolas 平台一共有 4 种用户角色（`users.role` 字段）：
 | **`service_provider`** | **服务商 / 平台运营方** | **全系统恰好 1 个** |
 
 服务商**不是**卖家，**也不是**买家 —— 他是托管市场的中间方：
-- 持有平台运营方钱包（地址 + 私钥）
-- 负责操作 `AgentEscrow` 合约（暂停、白名单、仲裁、调费率…）
+- 持有平台运营方钱包（即**平台收款钱包**，地址 + 私钥）
+- V1：通过 Java Job 管理平台钱包收款、资金锁定、放款 / 退款
+- V2（升级后）：操作 `NicolasEscrowV2` 合约（暂停、白名单、仲裁、调费率…）
 - 看平台统计数据 / 链上余额
+- 管理支付订单、资金流水、payout_job、纠纷裁决
 - 通过 OnchainOS 广播交易
 
 > "管理员"和"运营方钱包"在 Nicolas 里是**同一个身份** —— 都叫服务商。
@@ -69,13 +71,23 @@ Nicolas 平台一共有 4 种用户角色（`users.role` 字段）：
 | `XLAYER_CHAIN_ID` | `196` | 196 = 主网，195 = 测试网 |
 | `XLAYER_USDT_ADDRESS` | (主网 USDT) | XLayer 上 USDT ERC-20 |
 
-### Escrow 合约 + 服务商钱包
+### V1 平台钱包托管（当前 Demo 方案）
 
 | Key | 说明 |
 |---|---|
-| `ESCROW_CONTRACT_ADDRESS` | 已部署的 `AgentEscrow` 地址 |
+| `PAYMENT_MODE` | `PLATFORM_WALLET`（V1）或 `CONTRACT`（V2） |
+| `PLATFORM_WALLET_ADDRESS` | 平台收款钱包公开地址（即 `OPERATOR_ADDRESS`） |
+| `PLATFORM_WALLET_PRIVATE_KEY` | **机密** 平台收款钱包私钥（用于 Job 放款） |
+| `PAYOUT_JOB_ENABLED` | `true` 启用放款 Job |
+| `DEPOSIT_VERIFY_MIN_CONFIRMATIONS` | 入账最小确认数（建议 12） |
+
+### V2 合约托管（升级路径，暂不需要）
+
+| Key | 说明 |
+|---|---|
+| `ESCROW_CONTRACT_ADDRESS` | 已部署的 `NicolasEscrowV2` 地址（V2 需要） |
 | `OPERATOR_ADDRESS` | 服务商钱包公开地址（需与该唯一服务商账号绑定） |
-| `OPERATOR_PRIVATE_KEY` | **机密** 服务商私钥（hex，可带 `0x`） |
+| `OPERATOR_PRIVATE_KEY` | **机密** 服务商私钥，V2 合约 owner/arbitrator 操作（hex，可带 `0x`） |
 
 ### OnchainOS（OKX Wallet API）
 
@@ -152,18 +164,24 @@ GET /provider/stats
 
 | 接口 | 说明 |
 |---|---|
-| `GET /provider/chain/info` | chainId、RPC、USDT/Escrow/Operator 地址 |
-| `GET /provider/chain/escrow-balance` | Escrow 合约持有的 USDT |
-| `GET /provider/chain/operator-balance` | 服务商钱包的 OKB（native）+ USDT |
+| `GET /provider/chain/info` | chainId、RPC、USDT/平台钱包地址 |
+| `GET /provider/chain/operator-balance` | 平台钱包的 OKB（native）+ USDT |
 | `GET /provider/chain/usdt-balance?address=0x..` | 任意地址的 USDT |
+| `GET /provider/chain/escrow-balance` | （V2）Escrow 合约持有的 USDT |
 
-示例响应（escrow-balance）：
-```json
-{ "code": 200, "message": "ok",
-  "data": { "address": "0x...", "raw": "12345678", "usdt": "12.345678" } }
-```
+### 5.3 V1 支付托管管理
 
-### 5.3 OnchainOS 代理
+| 接口 | 说明 |
+|---|---|
+| `GET  /provider/wallet/info` | 平台钱包地址、余额、链上配置 |
+| `GET  /provider/payments/orders` | 所有 payment_order 及状态 |
+| `GET  /provider/payout-jobs` | 放款 / 退款任务列表及状态 |
+| `POST /provider/payout-jobs/{id}/retry` | 手动触发重试失败 Job |
+| `GET  /provider/disputes` | 所有纠纷案例及 Agent 建议 |
+| `POST /provider/disputes/{id}/resolve` | Admin 裁决纠纷，生成资金 Job |
+| `GET  /provider/audit-logs` | 所有敏感操作审计日志 |
+
+### 5.4 OnchainOS 代理
 
 | 接口 | 说明 |
 |---|---|
@@ -172,18 +190,20 @@ GET /provider/stats
 
 ---
 
-## 6. 后续可扩展端点（暂未实现）
+## 6. 可扩展端点
 
-利用已注入的 `OPERATOR_PRIVATE_KEY` → `Credentials` Bean，可以加：
+### 6.1 V2 合约端点（升级后启用）
+
+利用已注入的 `OPERATOR_PRIVATE_KEY` → `Credentials` Bean，V2 升级时可以加：
 
 | 端点 | 对应合约方法 | 用途 |
 |---|---|---|
-| `POST /provider/escrow/pause` | `pause()` | 暂停新订单 |
-| `POST /provider/escrow/unpause` | `unpause()` | 恢复 |
-| `POST /provider/escrow/whitelist` | `whitelistToken(token, ok)` | 白名单管理 |
-| `POST /provider/escrow/set-fee` | `setFeeBps(bps)` | 调整手续费 |
-| `POST /provider/escrow/interrupt` | `interruptOrder(id)` | 强制中断订单 |
-| `POST /provider/escrow/arbitrate` | `resolveDispute(id, ...)` | 仲裁纠纷 |
+| `POST /provider/escrow/pause` | `pauseNewOrders()` | 暂停新订单 |
+| `POST /provider/escrow/unpause` | `unpauseNewOrders()` | 恢复 |
+| `POST /provider/escrow/whitelist` | `setTokenWhitelist(token, ok)` | 白名单管理 |
+| `POST /provider/escrow/set-fee` | `setFee(bps)` | 调整手续费 |
+| `POST /provider/escrow/freeze` | `emergencyFreeze(id, hash)` | 冻结异常订单 |
+| `POST /provider/escrow/arbitrate` | `resolveDispute(id, bps, hash)` | 仲裁纠纷 |
 
 ---
 
@@ -210,5 +230,7 @@ GET /provider/stats
 | `backend/java/src/main/java/com/nicolas/service/OnchainOsClient.java` | OnchainOS HTTP 客户端 |
 | `backend/java/src/main/java/com/nicolas/controller/ProviderController.java` | 全部 `/provider/**` 端点 |
 | `backend/java/src/main/java/com/nicolas/service/AuthService.java` | `updateRole` 拒绝 `service_provider` 自我升降级 |
-| `backend/java/sql/migration.sql` | V003：`uk_users_role_service_provider` 唯一索引 |
-| `onchain/src/AgentEscrow.sol` | 托管合约源码 |
+| `backend/java/sql/migration.sql` | V003：`uk_users_role_service_provider` 唯一索引；V1 payment 表 |
+| `onchain/src/NicolasEscrowV2.sol` | V2 合约源码（升级路径） |
+
+> V1 支付托管相关业务逻辑参见：[Nicolas 支付托管 V1 平台钱包方案.MD](./Nicolas%20支付托管%20V1%20平台钱包方案.MD)

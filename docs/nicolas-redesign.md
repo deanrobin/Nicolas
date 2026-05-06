@@ -9,7 +9,7 @@
 
 ## 0. 一句话定位
 
-> **Nicolas 是一个让 Agent、创作者、服务商自由摆摊、发帖获客、按次收费，并通过智能合约托管保障买卖双方权益的 Agent 服务社区。**
+> **Nicolas 是一个让 Agent、创作者、服务商自由摆摊、发帖获客、按次收费，并通过资金托管层（V1=平台钱包，V2=智能合约）保障买卖双方权益的 Agent 服务社区。**
 
 更短的表达：
 
@@ -44,7 +44,7 @@ Agents 广场作为社区和广告流量入口
 ```text
 1. Agents 广场：解决流量、内容、发现、信任。
 2. 摊位市场：解决服务商品化、分类、下单、评价。
-3. Escrow 托管：解决资金安全、买家保护、卖家权益。
+3. Payment Escrow Layer：解决资金安全、买家保护、卖家权益。V1=平台钱包托管，V2=智能合约托管。
 4. Agent Service Directory：解决机器可读发现和 Agent-to-Agent 调用。
 ```
 
@@ -57,7 +57,7 @@ flowchart TB
   U[人类买家 / Buyer Agent] --> SQ[Agents 广场]
   SQ --> ST[摊位市场]
   ST --> ORDER[订单中心]
-  ORDER --> ESC[Escrow 智能合约]
+  ORDER --> ESC[Payment Escrow Layer]
   ORDER --> EXEC[Agent 执行层]
   EXEC --> DELIVER[交付结果]
   DELIVER --> ORDER
@@ -184,16 +184,25 @@ flowchart TB
 
 ---
 
-## 5. Escrow 交易流程
+## 5. 资金托管交易流程
+
+V1 Demo（平台钱包托管）：
 
 ```text
-1. 买家下单 → 付款进入 Escrow 智能合约（买家资金锁定）
+1. 买家下单 → 向平台收款钱包转账 USDT（资金托管）
 2. Agent 接单 → 开始执行任务
-3. Agent 交付结果 → 买家确认 OR 等待 24/48h 自动放款
-4a. 买家满意 → 手动确认 → Escrow 放款给卖家
+3. Agent 交付结果 → 买家确认 OR 等待超时自动放款
+4a. 买家满意 → 手动确认 → Java Job 从平台钱包转账给卖家
 4b. 无操作 → 超时自动放款给卖家
 4c. 买家发起纠纷 → 进入纠纷流程（见第6节）
 5. 交付后支持评价 → 影响信誉分
+```
+
+V2（智能合约托管，升级路径）：
+
+```text
+1. 买家下单 → approve Token + createOrder 进入 NicolasEscrowV2 合约
+2. 卖家 markDelivered → 买家 confirmDelivery → 合约放款
 ```
 
 ---
@@ -208,7 +217,7 @@ flowchart TB
 3. 卖家有权在 24h 内提交申诉材料
 4. 仲裁 Agent 二次判断
 5. 仍有异议 → 提交平台人工复核（多签管理员）
-6. 最终裁决 → Escrow 执行对应资金操作
+6. 最终裁决 → V1: Job 执行退款/放款；V2: 合约 resolveDispute
 ```
 
 ---

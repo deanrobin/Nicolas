@@ -1,8 +1,12 @@
-# Nicolas 链上闭环 Demo 研发、部署、测试路线
+# Nicolas Demo 托管交易闭环研发、部署、测试路线
 
-版本：v0.2  
+版本：v0.3（V1 平台钱包托管方案）
 项目路径：`/root/Nicolas`  
-Demo 目标：演讲现场展示 **Agent 服务市场 + 链上 Escrow 支付托管 + Agent 审核 / 客服 / 纠纷预审 + Admin 后台仲裁** 的完整闭环。
+Demo 目标：演讲现场展示 **Agent 服务市场 + 平台钱包托管交易闭环 + Agent 审核 / 客服 / 纠纷预审 + Admin 后台仲裁放款** 的完整闭环。
+
+> V1 Demo 使用**平台钱包托管 + Java DB Ledger + Job 放款**，不依赖智能合约作为 P0 前置。
+> 合约方案（NicolasEscrowV2）作为 V2 升级路径，不在本次 Demo P0 范围内。
+> 详见：[Nicolas 支付托管 V1 平台钱包方案.MD](./Nicolas%20支付托管%20V1%20平台钱包方案.MD)
 
 ---
 
@@ -23,21 +27,23 @@ Admin 后台快速通过
   ↓
 买家购买 Agent 服务
   ↓
-买家钱包 approve Token
+Java 返回平台收款钱包地址、Token、金额、chain_id
   ↓
-买家调用 AgentEscrow.createOrder
+买家向平台钱包转账，提交 tx_hash
   ↓
-资金进入链上 Escrow 托管
+deposit_verify_job 校验入账（Token Transfer）
   ↓
-卖家交付服务
+payment_ledger 资金锁定，订单进入 ESCROW_HELD
   ↓
-调用 markDelivered
+卖家执行 Agent 服务并提交交付
   ↓
-买家确认交付
+买家确认交付（或超时自动确认）
   ↓
-调用 confirmDelivery
+Java 创建 payout_job
   ↓
-链上放款给卖家
+payout_execute_job 用平台钱包执行放款给卖家
+  ↓
+订单进入 COMPLETED
 ```
 
 ```text
@@ -45,13 +51,11 @@ Admin 后台快速通过
 
 买家购买 Agent 服务
   ↓
-资金进入 Escrow
+资金进入平台钱包（payment_ledger 锁定）
   ↓
 卖家交付
   ↓
-买家不满意
-  ↓
-买家发起纠纷 raiseDispute
+买家不满意，通过平台发起纠纷
   ↓
 support_agent 判断为售后 / 退款问题
   ↓
@@ -59,11 +63,13 @@ handoff 给 dispute_agent
   ↓
 dispute_agent 给出退款 / 部分退款 / 放款建议
   ↓
-Admin 后台确认
+Admin 后台确认裁决结果
   ↓
-arbitrator 调用 resolveDispute
+Java 创建 refund_job / split_payout_job
   ↓
-链上完成退款 / 部分退款 / 放款
+payout_execute_job 用平台钱包执行退款 / 放款
+  ↓
+订单进入 REFUNDED / PARTIALLY_REFUNDED / COMPLETED
 ```
 
 ---
@@ -80,23 +86,24 @@ Nicolas 不是一个单纯的 Agent 聊天平台。
 1. 买卖前：
    review_agent 审核商家和 Agent / Skill，防止低质量或高风险服务上架。
 
-2. 买卖中：
-   用户支付的 Token 进入 AgentEscrow 智能合约，由链上托管，不直接打给卖家。
+2. 买卖中（V1 平台钱包托管）：
+   用户支付的 Token 进入平台收款钱包，由平台 DB Ledger 锁定，不直接打给卖家。
+   Java Job 校验入账，订单状态变为 ESCROW_HELD。
 
 3. 买卖后：
-   卖家交付后，买家确认，合约自动放款。
+   卖家交付后，买家确认，Java Job 自动执行链上放款给卖家。
 
 4. 出现纠纷：
    support_agent 负责客服分流，dispute_agent 给出仲裁建议。
    Agent 只给建议，不直接碰钱。
-   最终由 Admin / arbitrator 通过合约执行退款或放款。
+   最终由 Admin 确认并通过 payout_job 执行退款或放款。
 ```
 
 核心价值：
 
 ```text
 Agent 做平台治理
-智能合约做资金托管
+平台钱包 + DB Ledger 做资金托管（V1）/ 智能合约做资金托管（V2）
 Admin 做最终风险控制
 ```
 
@@ -113,26 +120,20 @@ Python Agent Orchestrator
   ↓
 review_agent / support_agent / dispute_agent
 
-Frontend
+买家转账给平台钱包（链上真实 Token 转账）
   ↓
-User Wallet
+Java deposit_verify_job 校验
   ↓
-AgentEscrow Smart Contract
-  ↓
-Token Transfer / Escrow / Refund / Release
+DB payment_ledger 锁定资金
 
-Java Backend
+Java payout_execute_job
   ↓
-MySQL
+平台钱包链上转账放款 / 退款
   ↓
-Admin Backend
-  ↓
-Arbitrator Wallet
-  ↓
-AgentEscrow.resolveDispute
+payout_confirm_job 确认链上状态
 ```
 
-更完整视图：
+更完整视图（V1 平台钱包托管）：
 
 ```text
                        ┌────────────────────┐
@@ -144,34 +145,37 @@ AgentEscrow.resolveDispute
                   │                             │
                   ▼                             ▼
         ┌──────────────────┐         ┌──────────────────────┐
-        │   Java Backend    │         │   User Wallet         │
-        │ 业务 / 订单 / API │         │ approve / createOrder │
+        │   Java Backend    │         │   买家钱包             │
+        │ 业务 / 订单 / API │         │ 向平台钱包 Token 转账   │
         └─────────┬────────┘         └──────────┬───────────┘
                   │                             │
                   ▼                             ▼
         ┌──────────────────┐         ┌──────────────────────┐
-        │ Python Agent      │         │ AgentEscrow Contract  │
-        │ Orchestrator      │         │ 托管 / 放款 / 纠纷     │
+        │ Python Agent      │         │ 平台收款钱包            │
+        │ Orchestrator      │         │ Token 接收 / 放款 / 退款│
         └─────────┬────────┘         └──────────┬───────────┘
                   │                             │
        ┌──────────┼──────────┐                  │
        ▼          ▼          ▼                  ▼
 ┌───────────┐ ┌───────────┐ ┌────────────┐ ┌──────────────┐
 │review     │ │support    │ │dispute     │ │ ERC20 Token   │
-│agent      │ │agent      │ │agent       │ │ USDT/DemoUSDT │
+│agent      │ │agent      │ │agent       │ │ USDT          │
 └───────────┘ └───────────┘ └────────────┘ └──────────────┘
                   │
                   ▼
         ┌──────────────────┐
         │ MySQL             │
-        │ orders/reviews/   │
-        │ disputes/tx logs  │
+        │ payment_orders    │
+        │ payment_ledger    │
+        │ payout_jobs       │
+        │ dispute_cases     │
         └─────────┬────────┘
                   │
                   ▼
         ┌──────────────────┐
         │ Admin 后台        │
         │ 审核 / 仲裁 / 工单 │
+        │ payout_job 管理   │
         └──────────────────┘
 ```
 
@@ -217,22 +221,27 @@ AgentEscrow.resolveDispute
 ## 5.1 P0：必须完成
 
 ```text
-[ ] AgentEscrow 合约本地 forge test 通过
-[ ] AgentEscrow 部署到测试网或主网
-[ ] 前端钱包连接
-[ ] 前端检测 chainId
-[ ] 前端 Token approve
-[ ] 前端 createOrder
-[ ] Java 记录 createOrder tx_hash
-[ ] Java 同步链上订单状态
-[ ] 卖家 markDelivered
-[ ] 买家 confirmDelivery
-[ ] 前端展示 Completed 和交易哈希
+[ ] platform_wallet_config 表：配置平台收款钱包地址、Token、chain_id
+[ ] payment_orders 表：创建支付订单，返回收款钱包、金额、token、chain_id
+[ ] 前端展示付款信息（钱包地址 + 金额 + Token + 二维码 / 链接）
+[ ] 买家向平台钱包转账，提交 tx_hash
+[ ] deposit_verify_job：校验 tx_hash 是否是合法 Token Transfer 到账
+[ ] wallet_transactions 入账记录
+[ ] payment_ledger：资金锁定状态（DEBIT 入账记录）
+[ ] 订单状态流转：PAYMENT_SUBMITTED → ESCROW_HELD
+[ ] Agent 执行服务，卖家提交 delivery
+[ ] 买家确认 / 超时自动确认（auto_release_job）
+[ ] Java 创建 payout_job / refund_job
+[ ] payout_execute_job：平台钱包链上转账放款 / 退款
+[ ] payout_confirm_job：确认链上交易，更新订单状态
+[ ] payment_ledger：放款 / 退款记录（CREDIT 出账记录）
 [ ] support_agent 识别退款 / 售后问题
-[ ] dispute_agent 输出仲裁建议
-[ ] Admin 后台调用 resolveDispute
-[ ] 前端展示纠纷处理结果
+[ ] dispute_agent 输出仲裁建议（含 refund_amount / payout_amount）
+[ ] Admin 后台确认纠纷裁决，生成 refund_job / split_payout_job
+[ ] 前端展示订单状态、资金流水、放款 tx_hash
 ```
+
+> **V2 范围（不在 P0）**：AgentEscrow 合约、approve Token、createOrder、markDelivered、confirmDelivery（合约调用）、resolveDispute（合约调用）、event indexer。详见 [NicolasEscrowV2 合约设计方案.MD](./NicolasEscrowV2%20合约设计方案.MD)。
 
 ---
 
@@ -271,276 +280,189 @@ AgentEscrow.resolveDispute
 
 ## 6. 研发路线
 
-## 6.1 第一阶段：链上合约基础
+## 6.1 第一阶段（V1）：平台钱包收款配置
 
-路径：
-
-```text
-/root/Nicolas/onchain
-```
-
-执行：
-
-```bash
-cd /root/Nicolas/onchain
-forge build
-forge test
-```
-
-必须验证合约核心方法：
+V1 不需要部署智能合约，直接配置平台收款钱包：
 
 ```text
-createOrder
-markDelivered
-confirmDelivery
-raiseDispute
-resolveDispute
-autoRelease
-cancelExpiredOrder
-sellerRefund
+平台运营方持有一个 EVM 钱包地址作为收款地址
+配置进 platform_wallet_config 表
+Java 读取并在创建支付订单时返回给买家
 ```
 
-如果 Demo 使用测试网而不是主网真实 USDT，建议补一个测试 Token：
+配置示例（`platform_wallet_config` 表记录）：
 
 ```text
-/root/Nicolas/onchain/src/DemoUSDT.sol
+chain_id = 196（XLayer 主网）
+token_address = 0x1E4a5963aBFD975d8c9021ce480b42188849D41d（USDT）
+wallet_address = 0x你的收款地址
+daily_limit = 1000（USDT）
+single_tx_limit = 100（USDT）
+enabled = true
 ```
 
-用途：
-
-```text
-1. 给 buyer mint 测试 Token
-2. buyer approve 给 AgentEscrow
-3. buyer createOrder 完成托管
-4. confirmDelivery 后 seller 收到 DemoUSDT
-5. resolveDispute 后 buyer / seller 按比例收到 DemoUSDT
-```
+> V2 合约部署说明请参考：[NicolasEscrowV2 合约设计方案.MD](./NicolasEscrowV2%20合约设计方案.MD)
 
 ---
 
-## 6.2 第二阶段：部署 AgentEscrow
+## 6.2 第二阶段（V1）：DB 表设计
 
-### 测试网部署
+V1 支付托管新增 7 张核心表，参考 [Nicolas 支付托管 V1 平台钱包方案.MD](./Nicolas%20支付托管%20V1%20平台钱包方案.MD) 中的第 4 节。
 
-```bash
-cd /root/Nicolas/onchain
-
-export PRIVATE_KEY=部署者私钥
-export FEE_RECIPIENT=0x手续费接收地址
-export ARBITRATOR=0x仲裁者地址
-export FEE_BPS=0
-export USDT_ADDRESS=0x测试网DemoUSDT地址
-export XLAYER_RPC=https://testrpc.xlayer.tech/terigon
-
-forge script script/Deploy.s.sol:DeployAgentEscrow \
-  --rpc-url $XLAYER_RPC \
-  --broadcast \
-  -vvvv
-```
-
-### 主网小额 Demo 部署
-
-```bash
-cd /root/Nicolas/onchain
-
-export PRIVATE_KEY=部署者私钥
-export FEE_RECIPIENT=0x手续费接收地址
-export ARBITRATOR=0x仲裁者地址
-export FEE_BPS=0
-export USDT_ADDRESS=0x主网XLayer_USDT地址
-export XLAYER_RPC=https://rpc.xlayer.tech
-
-forge script script/Deploy.s.sol:DeployAgentEscrow \
-  --rpc-url $XLAYER_RPC \
-  --broadcast \
-  -vvvv
-```
-
-部署完成后记录：
-
-```text
-CHAIN_ID
-ESCROW_CONTRACT_ADDRESS
-PAYMENT_TOKEN_ADDRESS
-FEE_RECIPIENT_ADDRESS
-ARBITRATOR_ADDRESS
-DEPLOY_TX_HASH
-RPC_URL
-```
-
-这些要同步写入：
-
-```text
-/root/Nicolas/backend/java 的环境变量
-/root/Nicolas/frontend/.env.production
-演讲备忘文档
-```
-
----
-
-## 6.3 第三阶段：DB 表设计
-
-链上闭环建议新增三张核心表。
-
-### 6.3.1 `onchain_orders`
+### 6.2.1 `payment_orders`（支付订单主表）
 
 ```sql
-CREATE TABLE onchain_orders (
+CREATE TABLE payment_orders (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
-
-    order_id VARCHAR(66) NOT NULL UNIQUE,
-    business_order_id VARCHAR(64) NOT NULL UNIQUE,
-
+    order_id VARCHAR(64) NOT NULL UNIQUE,
+    buyer_wallet VARCHAR(42) NOT NULL,
+    seller_wallet VARCHAR(42) NOT NULL,
+    token_address VARCHAR(42) NOT NULL,
     chain_id BIGINT NOT NULL,
-    escrow_contract VARCHAR(42) NOT NULL,
-    payment_token VARCHAR(42) NOT NULL,
-
-    buyer_address VARCHAR(42) NOT NULL,
-    seller_address VARCHAR(42) NOT NULL,
-
-    amount_wei VARCHAR(80) NOT NULL,
-    fee_wei VARCHAR(80) NULL,
-
-    lock_blocks BIGINT NOT NULL,
-    deliver_by_block BIGINT NULL,
-    delivered_at_block BIGINT NULL,
-
-    metadata_hash VARCHAR(66) NULL,
-
-    onchain_status VARCHAR(32) NOT NULL,
-    -- NONE / ESCROW_HELD / DELIVERED / COMPLETED /
-    -- DISPUTED / REFUNDED / CANCELLED / INTERRUPTED
-
-    create_tx_hash VARCHAR(66) NULL,
-    delivered_tx_hash VARCHAR(66) NULL,
-    confirm_tx_hash VARCHAR(66) NULL,
-    dispute_tx_hash VARCHAR(66) NULL,
-    resolve_tx_hash VARCHAR(66) NULL,
-
+    amount DECIMAL(36,18) NOT NULL,
+    status VARCHAR(32) NOT NULL,
+    -- CREATED / WAITING_PAYMENT / PAYMENT_SUBMITTED / ESCROW_HELD
+    -- IN_SERVICE / DELIVERED / CONFIRMED / PAYOUT_PENDING / COMPLETED
+    -- DISPUTED / REFUND_PENDING / REFUNDED / PARTIALLY_REFUNDED / FAILED_NEED_MANUAL
+    deposit_tx_hash VARCHAR(66) NULL,
+    expire_at DATETIME NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-
-    INDEX idx_onchain_orders_business_order (business_order_id),
-    INDEX idx_onchain_orders_status (onchain_status),
-    INDEX idx_onchain_orders_buyer (buyer_address),
-    INDEX idx_onchain_orders_seller (seller_address)
+    INDEX idx_payment_orders_buyer (buyer_wallet),
+    INDEX idx_payment_orders_status (status)
 );
 ```
 
 ---
 
-### 6.3.2 `chain_transactions`
+### 6.2.2 `wallet_transactions`（平台钱包链上交易）
 
 ```sql
-CREATE TABLE chain_transactions (
+CREATE TABLE wallet_transactions (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
-
     tx_hash VARCHAR(66) NOT NULL UNIQUE,
     chain_id BIGINT NOT NULL,
-
-    business_type VARCHAR(64) NOT NULL,
-    -- CREATE_ORDER / MARK_DELIVERED / CONFIRM_DELIVERY /
-    -- RAISE_DISPUTE / RESOLVE_DISPUTE / SELLER_REFUND / AUTO_RELEASE
-
-    business_id VARCHAR(64) NOT NULL,
-
-    from_address VARCHAR(42) NULL,
-    to_address VARCHAR(42) NULL,
-
+    token_address VARCHAR(42) NOT NULL,
+    from_address VARCHAR(42) NOT NULL,
+    to_address VARCHAR(42) NOT NULL,
+    amount DECIMAL(36,18) NOT NULL,
+    block_number BIGINT NULL,
+    confirmations INT NOT NULL DEFAULT 0,
     status VARCHAR(32) NOT NULL,
     -- PENDING / CONFIRMED / FAILED
-
-    block_number BIGINT NULL,
-    gas_used VARCHAR(80) NULL,
-    error_message TEXT NULL,
-
-    raw_receipt_json JSON NULL,
-
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-
-    INDEX idx_chain_transactions_business (business_type, business_id),
-    INDEX idx_chain_transactions_status (status)
+    INDEX idx_wallet_tx_status (status)
 );
 ```
 
 ---
 
-### 6.3.3 `escrow_events`
+### 6.2.3 `payment_ledger`（资金账本）
 
 ```sql
-CREATE TABLE escrow_events (
+CREATE TABLE payment_ledger (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
-
-    chain_id BIGINT NOT NULL,
-    contract_address VARCHAR(42) NOT NULL,
-    event_name VARCHAR(64) NOT NULL,
-
-    order_id VARCHAR(66) NOT NULL,
-    tx_hash VARCHAR(66) NOT NULL,
-    block_number BIGINT NOT NULL,
-    log_index INT NOT NULL,
-
-    event_json JSON NOT NULL,
-
+    order_id VARCHAR(64) NOT NULL,
+    direction VARCHAR(16) NOT NULL,
+    -- DEBIT（入账锁定）/ CREDIT（出账释放）
+    amount DECIMAL(36,18) NOT NULL,
+    balance_type VARCHAR(32) NOT NULL,
+    -- LOCKED / RELEASED / REFUNDED / FEE
+    ref_tx_hash VARCHAR(66) NULL,
+    status VARCHAR(32) NOT NULL,
+    -- PENDING / CONFIRMED / FAILED
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    UNIQUE KEY uniq_event (chain_id, tx_hash, log_index),
-    INDEX idx_escrow_events_order (order_id),
-    INDEX idx_escrow_events_name (event_name)
+    INDEX idx_payment_ledger_order (order_id)
 );
 ```
 
 ---
 
-## 6.4 第四阶段：Java 后端链上模块
+### 6.2.4 `payout_jobs`（放款 / 退款任务）
+
+```sql
+CREATE TABLE payout_jobs (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    order_id VARCHAR(64) NOT NULL,
+    job_type VARCHAR(32) NOT NULL,
+    -- PAYOUT / REFUND / SPLIT_PAYOUT
+    to_address VARCHAR(42) NOT NULL,
+    amount DECIMAL(36,18) NOT NULL,
+    token_address VARCHAR(42) NOT NULL,
+    status VARCHAR(32) NOT NULL,
+    -- PENDING / EXECUTING / CONFIRMED / FAILED
+    retry_count INT NOT NULL DEFAULT 0,
+    tx_hash VARCHAR(66) NULL,
+    error_message TEXT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_payout_jobs_order (order_id),
+    INDEX idx_payout_jobs_status (status)
+);
+```
+
+---
+
+## 6.3 第三阶段（V1）：Java 后端支付模块
 
 建议新增路径：
 
 ```text
-/root/Nicolas/backend/java/src/main/java/com/nicolas/backend/onchain/
+/root/Nicolas/backend/java/src/main/java/com/nicolas/payment/
 ```
 
 建议模块：
 
 ```text
-OnchainConfig.java
-EscrowContractService.java
-EscrowOrderService.java
-TxReceiptService.java
-EscrowEventIndexer.java
-AdminArbitrationService.java
+PaymentConfig.java
+PaymentOrderService.java
+DepositVerifyJob.java
+WalletScanJob.java
+PayoutExecuteJob.java
+PayoutConfirmJob.java
+AutoReleaseJob.java
+PaymentLedgerService.java
 ```
 
 职责：
 
 ```text
-OnchainConfig
-  读取 chainId、rpcUrl、escrowAddress、tokenAddress、arbitratorKey
+PaymentConfig
+  读取 chainId、rpcUrl、platformWalletAddress、tokenAddress
 
-EscrowContractService
-  封装 getOrder、isReleasable、previewFee、markDelivered、resolveDispute
+PaymentOrderService
+  创建 payment_order，返回收款钱包信息给买家
 
-EscrowOrderService
-  创建业务订单、生成 bytes32 orderId、记录链上状态
+DepositVerifyJob
+  校验买家提交的 tx_hash：token 地址、to 地址、金额、confirmations
+  写入 wallet_transactions + payment_ledger
+  更新订单状态为 ESCROW_HELD
 
-TxReceiptService
-  根据 tx_hash 查询回执，更新 CONFIRMED / FAILED
+WalletScanJob（可选）
+  主动扫描平台钱包入账，防止买家未提交 tx_hash
 
-EscrowEventIndexer
-  扫描 OrderCreated / OrderDelivered / OrderCompleted / OrderDisputed / DisputeResolved 事件
+PayoutExecuteJob
+  读取 payout_jobs，用平台钱包执行链上转账放款 / 退款
+  支持指数退避重试
 
-AdminArbitrationService
-  Admin 后台点击后，用 arbitrator 钱包签名 resolveDispute
+PayoutConfirmJob
+  查询放款 tx 确认数，更新订单最终状态（COMPLETED / REFUNDED）
+
+AutoReleaseJob
+  交付超期自动确认，创建 payout_job
+
+PaymentLedgerService
+  写入 payment_ledger，维护每笔订单的资金状态
 ```
 
 建议边界：
 
 ```text
-买家交易：前端钱包签名
-卖家交付：Demo 可由 Java 代签，减少现场切钱包
-管理员仲裁：Java 用 ARBITRATOR_PRIVATE_KEY 代签
-链上状态同步：Java 负责
+买家：只需要链上转账，不需要 approve 或调用合约
+卖家放款：由 Java PayoutExecuteJob 代执行，使用平台钱包私钥
+退款：同 PayoutExecuteJob，发送到买家地址
+Admin 仲裁：Admin 确认后 Java 创建 split_payout_job
 ```
 
 ---
@@ -665,189 +587,175 @@ AdminDisputePage
 
 ---
 
-## 7. 链上闭环 API 设计
+## 7. V1 支付托管 API 设计
 
-## 7.1 创建订单前准备参数
+参考完整定义：[Nicolas 支付托管 V1 平台钱包方案.MD](./Nicolas%20支付托管%20V1%20平台钱包方案.MD) 第 7 节。
+
+## 7.1 创建订单，返回收款信息
 
 ```text
-POST /api/orders/{agentId}/prepare-onchain-order
+POST /api/orders
 ```
 
 返回：
 
 ```json
 {
-  "business_order_id": "order_001",
-  "order_id": "0xabc123...",
+  "order_id": "order_001",
   "chain_id": 196,
-  "escrow_contract": "0xEscrow...",
-  "payment_token": "0xUSDT...",
-  "buyer_address": "0xBuyer...",
-  "seller_address": "0xSeller...",
-  "amount_wei": "100000",
-  "lock_blocks": 20,
-  "deliver_by_block": 0,
-  "metadata_hash": "0x..."
+  "payment_wallet": "0x平台收款钱包...",
+  "token_address": "0xUSDT...",
+  "amount": "0.5",
+  "expire_at": "2026-05-06T12:00:00Z"
 }
 ```
 
-前端使用这些参数调用：
-
-```text
-ERC20.approve(escrow_contract, amount)
-AgentEscrow.createOrder(...)
-```
+前端展示给买家：向上述地址转账指定金额的 USDT（不需要 approve，不需要调用合约）。
 
 ---
 
-## 7.2 买家提交 createOrder 交易哈希
+## 7.2 买家提交付款 tx_hash
 
 ```text
-POST /api/orders/{orderId}/submit-create-tx
+POST /api/orders/{orderId}/payment/tx
 ```
 
 请求：
 
 ```json
 {
-  "tx_hash": "0x...",
-  "buyer_address": "0x..."
+  "tx_hash": "0x..."
 }
+```
+
+Java 处理（deposit_verify_job）：
+
+```text
+1. 查询 tx receipt
+2. 确认是 Token Transfer，to = 平台收款钱包
+3. 确认 token_address 和 amount 匹配
+4. 确认 confirmations 足够
+5. 写入 wallet_transactions
+6. 写入 payment_ledger（DEBIT 入账锁定）
+7. 更新 payment_order.status = ESCROW_HELD
+```
+
+---
+
+## 7.3 查询订单和支付状态
+
+```text
+GET /api/orders/{id}
+```
+
+返回订单当前状态、交付状态、资金状态。
+
+---
+
+## 7.4 卖家提交交付
+
+```text
+POST /api/orders/{id}/deliver
 ```
 
 Java 处理：
 
 ```text
-1. 查询 receipt
-2. 确认 tx 成功
-3. 确认事件 OrderCreated
-4. 确认 buyer / seller / token / amount / orderId 匹配
-5. 更新 onchain_orders.status = ESCROW_HELD
-6. 更新 business_order.status = PAID_ESCROW
+更新 payment_order.status = DELIVERED
+买家可以确认 / 发起纠纷 / 等待超时
 ```
 
 ---
 
-## 7.3 卖家标记交付
-
-Demo 阶段可由 Java 后端代签：
+## 7.5 买家确认交付
 
 ```text
-POST /api/seller/orders/{orderId}/mark-delivered
+POST /api/orders/{id}/confirm
 ```
 
-Java 调合约：
+Java 处理：
 
 ```text
-AgentEscrow.markDelivered(orderId)
+更新状态为 CONFIRMED
+创建 payout_job（放款给卖家）
 ```
 
-成功后：
+`payout_execute_job` 读取 payout_job，用平台钱包执行链上转账：
 
 ```text
-onchain_status = DELIVERED
-business_order.status = DELIVERED
-delivered_tx_hash = 0x...
+from: 平台收款钱包
+to: 卖家钱包
+amount: 订单金额
+token: USDT
 ```
 
----
-
-## 7.4 买家确认交付
-
-前端买家钱包调用：
+放款 tx 确认后：
 
 ```text
-AgentEscrow.confirmDelivery(orderId)
-```
-
-随后提交交易哈希：
-
-```text
-POST /api/orders/{orderId}/submit-confirm-tx
-```
-
-Java 校验后：
-
-```text
-onchain_status = COMPLETED
-business_order.status = COMPLETED
-confirm_tx_hash = 0x...
+payment_ledger 写入 CREDIT 出账记录
+payment_order.status = COMPLETED
 ```
 
 演讲重点：
 
 ```text
-托管合约余额减少
+平台钱包余额减少
 卖家 Token 余额增加
-Explorer 出现 OrderCompleted / Token Transfer
+Explorer 出现 Token Transfer（from 平台钱包 to 卖家）
 ```
 
 ---
 
-## 7.5 买家发起纠纷
-
-前端调用：
+## 7.6 买家发起纠纷
 
 ```text
-AgentEscrow.raiseDispute(orderId)
-```
-
-然后提交：
-
-```text
-POST /api/orders/{orderId}/submit-dispute-tx
+POST /api/orders/{id}/disputes
 ```
 
 Java 处理：
 
 ```text
-onchain_status = DISPUTED
-business_order.status = DISPUTED
+payment_order.status = DISPUTED
 创建 dispute_case
 调用 support_agent / dispute_agent
 ```
 
 ---
 
-## 7.6 Admin 仲裁
+## 7.7 Admin 纠纷裁决
 
 ```text
-POST /api/admin/disputes/{disputeId}/resolve-onchain
+POST /provider/disputes/{id}/resolve
 ```
 
 请求：
 
 ```json
 {
-  "buyer_refund_bps": 5000,
-  "admin_comment": "卖家完成部分交付，建议退还 50%"
+  "refund_amount": "0.25",
+  "payout_amount": "0.25",
+  "admin_decision": "卖家完成部分交付，建议退还 50%"
 }
 ```
 
-Java 调用：
+Java 处理：
 
 ```text
-AgentEscrow.resolveDispute(orderId, 5000)
-```
-
-结果：
-
-```text
-buyer 收到 50% 退款
-seller 收到剩余金额
-订单状态变为 COMPLETED 或 REFUNDED
+创建 refund_job（退款给买家）+ payout_job（放款给卖家）
+payout_execute_job 分别执行
+payment_order.status = PARTIALLY_REFUNDED
 ```
 
 全额退款：
 
 ```text
-buyer_refund_bps = 10000
+refund_amount = 全部，payout_amount = 0
 ```
 
-完全放款给卖家：
+全部放款给卖家：
 
 ```text
-buyer_refund_bps = 0
+refund_amount = 0，payout_amount = 全部
 ```
 
 ---
@@ -923,9 +831,7 @@ Java Backend → Python Agent Orchestrator
 
 ---
 
-## 8.2 Java 环境变量
-
-测试网示例：
+## 8.2 Java 环境变量（V1 平台钱包托管）
 
 ```ini
 Environment=SERVER_PORT=8080
@@ -937,65 +843,48 @@ Environment=DB_PASS=你的数据库密码
 
 Environment=PYTHON_BACKEND_URL=http://127.0.0.1:8000
 
-Environment=CHAIN_ID=1952
-Environment=XLAYER_RPC_URL=https://testrpc.xlayer.tech/terigon
-Environment=ESCROW_CONTRACT_ADDRESS=0x你的Escrow合约地址
-Environment=PAYMENT_TOKEN_ADDRESS=0x测试网DemoUSDT地址
-Environment=FEE_RECIPIENT_ADDRESS=0x手续费地址
-Environment=ARBITRATOR_ADDRESS=0x仲裁地址
-Environment=ARBITRATOR_PRIVATE_KEY=演示仲裁钱包私钥
+# 支付托管相关
+Environment=PAYMENT_MODE=PLATFORM_WALLET
+Environment=XLAYER_RPC_URL=https://rpc.xlayer.tech
+Environment=XLAYER_CHAIN_ID=196
+Environment=XLAYER_USDT_ADDRESS=0x1E4a5963aBFD975d8c9021ce480b42188849D41d
+
+# 平台收款钱包（V1 托管核心）
+Environment=PLATFORM_WALLET_ADDRESS=0x你的平台收款钱包地址
+Environment=PLATFORM_WALLET_PRIVATE_KEY=平台钱包私钥（仅服务器env）
+
+# Job 配置
+Environment=PAYOUT_JOB_ENABLED=true
+Environment=DEPOSIT_VERIFY_MIN_CONFIRMATIONS=12
 
 Environment=JWT_SECRET=换成强随机字符串
 Environment=MAIL_DEV_MODE=true
 ```
 
-主网示例：
-
-```ini
-Environment=CHAIN_ID=196
-Environment=XLAYER_RPC_URL=https://rpc.xlayer.tech
-Environment=ESCROW_CONTRACT_ADDRESS=0x你的Escrow合约地址
-Environment=PAYMENT_TOKEN_ADDRESS=0x主网USDT地址
-Environment=FEE_RECIPIENT_ADDRESS=0x手续费地址
-Environment=ARBITRATOR_ADDRESS=0x仲裁地址
-Environment=ARBITRATOR_PRIVATE_KEY=演示仲裁钱包私钥
-```
-
 安全注意：
 
 ```text
-ARBITRATOR_PRIVATE_KEY 只能用于 Demo 小额资金。
-不要把大额主钱包私钥放到服务器。
-正式环境应使用多签、硬件钱包或签名服务。
+PLATFORM_WALLET_PRIVATE_KEY 只能放在服务器 env，不能进 git / 日志 / DB。
+Demo 建议平台钱包只保留演示所需的小额资金。
+正式生产环境建议热钱包 + 冷钱包分离，热钱包只保留日常放款额度。
 ```
+
+> V2 合约环境变量（ESCROW_CONTRACT_ADDRESS、ARBITRATOR_PRIVATE_KEY 等）在 V2 升级时再配置。
 
 ---
 
-## 8.3 Frontend 环境变量
-
-测试网：
-
-```env
-VITE_API_URL=https://你的域名/api
-VITE_CHAIN_ID=1952
-VITE_XLAYER_RPC_URL=https://testrpc.xlayer.tech/terigon
-VITE_ESCROW_CONTRACT_ADDRESS=0x你的Escrow合约地址
-VITE_PAYMENT_TOKEN_ADDRESS=0x测试网DemoUSDT地址
-VITE_PAYMENT_TOKEN_SYMBOL=DemoUSDT
-VITE_PAYMENT_TOKEN_DECIMALS=6
-```
-
-主网：
+## 8.3 Frontend 环境变量（V1）
 
 ```env
 VITE_API_URL=https://你的域名/api
 VITE_CHAIN_ID=196
 VITE_XLAYER_RPC_URL=https://rpc.xlayer.tech
-VITE_ESCROW_CONTRACT_ADDRESS=0x你的Escrow合约地址
-VITE_PAYMENT_TOKEN_ADDRESS=0x主网USDT地址
+VITE_PAYMENT_TOKEN_ADDRESS=0x1E4a5963aBFD975d8c9021ce480b42188849D41d
 VITE_PAYMENT_TOKEN_SYMBOL=USDT
 VITE_PAYMENT_TOKEN_DECIMALS=6
 ```
+
+前端 V1 不需要 ESCROW_CONTRACT_ADDRESS、approve 和合约调用相关配置。
 
 ---
 
@@ -1167,134 +1056,89 @@ systemctl reload nginx
 
 ## 9. 测试计划
 
-## 9.1 合约本地测试
+## 9.1 Java 单元测试
 
 ```bash
-cd /root/Nicolas/onchain
-forge test -vvvv
+cd /root/Nicolas/backend/java
+mvn test
 ```
 
 必须覆盖：
 
 ```text
-[ ] createOrder 成功
-[ ] 重复 orderId 失败
-[ ] 非白名单 token 失败
-[ ] amount = 0 失败
-[ ] markDelivered 成功
-[ ] 非 seller markDelivered 失败
-[ ] confirmDelivery 成功
-[ ] 非 buyer confirmDelivery 失败
-[ ] raiseDispute 成功
-[ ] resolveDispute 全额退款
-[ ] resolveDispute 部分退款
-[ ] resolveDispute 放款给卖家
-[ ] autoRelease 成功
-[ ] cancelExpiredOrder 成功
+[ ] PaymentOrderService.createOrder 返回正确收款信息
+[ ] DepositVerifyJob：tx_hash 校验通过，写入 payment_ledger
+[ ] DepositVerifyJob：to 地址不匹配，拒绝
+[ ] DepositVerifyJob：金额不足，拒绝
+[ ] DepositVerifyJob：confirmations 不足，等待
+[ ] PayoutExecuteJob：创建放款 job，执行链上转账
+[ ] PayoutExecuteJob：失败后指数退避重试
+[ ] PayoutExecuteJob：超过重试次数，进入 FAILED_NEED_MANUAL
+[ ] AutoReleaseJob：交付超期自动进入 PAYOUT_PENDING
 ```
 
 ---
 
-## 9.2 本地 Anvil 全链路测试
+## 9.2 本地全链路测试
 
-启动本地链：
-
-```bash
-anvil
-```
-
-部署合约：
-
-```bash
-cd /root/Nicolas/onchain
-
-forge script script/Deploy.s.sol:DeployAgentEscrow \
-  --rpc-url http://127.0.0.1:8545 \
-  --broadcast \
-  -vvvv
-```
-
-测试流程：
+使用本地账号和测试钱包：
 
 ```text
-1. 部署 DemoUSDT
-2. buyer mint DemoUSDT
-3. buyer approve escrow
-4. buyer createOrder
-5. seller markDelivered
-6. buyer confirmDelivery
-7. 检查 seller balance 增加
-8. 检查 escrow order status = Completed
+1. 注册买家账号，绑定钱包
+2. 注册卖家账号，完成商家入驻
+3. 卖家上架 Agent，等待 review_agent 审核通过
+4. 买家下单，获取收款钱包信息
+5. 用测试钱包向平台钱包转账 USDT
+6. 提交 tx_hash，等待 deposit_verify_job 校验
+7. 确认订单进入 ESCROW_HELD
+8. 卖家提交 delivery
+9. 买家确认，创建 payout_job
+10. 等待 payout_execute_job 执行放款
+11. 确认卖家收到 USDT
 ```
 
 ---
 
-## 9.3 测试网 Smoke Test
+## 9.3 主网 Demo 彩排
 
-在 X Layer Testnet 做：
-
-```text
-1. 部署 DemoUSDT
-2. 给 buyer mint DemoUSDT
-3. 部署 AgentEscrow
-4. buyer approve
-5. buyer createOrder
-6. seller markDelivered
-7. buyer confirmDelivery
-8. Explorer 查询交易
-```
-
-验收标准：
-
-```text
-[ ] 前端显示 PAID_ESCROW
-[ ] Java DB 有 onchain_orders
-[ ] Explorer 能查到 createOrder tx
-[ ] 卖家交付后状态变 DELIVERED
-[ ] 买家确认后状态变 COMPLETED
-[ ] seller Token 余额增加
-```
-
----
-
-## 9.4 主网小额彩排
-
-如果演讲要用真实主网支付，至少提前彩排 2 次。
+如果演讲要用真实主网，至少提前彩排 2 次。
 
 建议金额：
 
 ```text
-0.1 USDT
-0.5 USDT
-```
-
-锁定区块：
-
-```text
-20 blocks
-```
-
-手续费：
-
-```text
-0
+0.1 USDT（测试）
+0.5 USDT（Demo 演示）
 ```
 
 检查项：
 
 ```text
-[ ] buyer 钱包有 OKB gas
-[ ] buyer 钱包有 USDT
+[ ] 平台收款钱包有足够 OKB（gas）
+[ ] 平台收款钱包地址配置正确
+[ ] USDT token 地址正确
+[ ] chainId = 196 正确
+[ ] buyer 钱包有 OKB gas 和 USDT
 [ ] seller 钱包地址正确
-[ ] arbitrator 钱包有 OKB gas
-[ ] 合约地址正确
-[ ] token 地址正确
-[ ] chainId 正确
-[ ] approve 正常
-[ ] createOrder 正常
-[ ] markDelivered 正常
-[ ] confirmDelivery 正常
-[ ] resolveDispute 正常
+[ ] 转账并提交 tx_hash 正常
+[ ] deposit_verify_job 正常校验
+[ ] 订单进入 ESCROW_HELD
+[ ] payout_execute_job 执行放款
+[ ] seller Token 余额增加
+[ ] Explorer 出现 Token Transfer（平台钱包 → 卖家）
+```
+
+---
+
+## 9.4 纠纷流程彩排
+
+```text
+[ ] 买家发起纠纷，订单进入 DISPUTED
+[ ] dispute_agent 生成仲裁建议
+[ ] Admin 后台可见纠纷 + 建议
+[ ] Admin 裁决（50% 退款）
+[ ] refund_job + payout_job 正常执行
+[ ] 买家收到退款，卖家收到部分放款
+[ ] 订单进入 PARTIALLY_REFUNDED
 ```
 
 ---
@@ -1355,17 +1199,27 @@ mysql -u nicolas -p nicolas
 查询：
 
 ```sql
-SELECT business_order_id, order_id, onchain_status, create_tx_hash, confirm_tx_hash
-FROM onchain_orders
+SELECT order_id, status, deposit_tx_hash, created_at
+FROM payment_orders
 ORDER BY id DESC
 LIMIT 10;
 
-SELECT tx_hash, business_type, status, block_number
-FROM chain_transactions
+SELECT tx_hash, from_address, to_address, amount, confirmations, status
+FROM wallet_transactions
 ORDER BY id DESC
 LIMIT 10;
 
-SELECT dispute_id, order_id, agent_recommendation, status
+SELECT order_id, direction, amount, balance_type, ref_tx_hash, status
+FROM payment_ledger
+ORDER BY id DESC
+LIMIT 10;
+
+SELECT order_id, job_type, to_address, amount, status, retry_count, tx_hash
+FROM payout_jobs
+ORDER BY id DESC
+LIMIT 10;
+
+SELECT order_id, agent_suggestion, admin_decision, refund_amount, payout_amount
 FROM dispute_cases
 ORDER BY id DESC
 LIMIT 10;
@@ -1390,27 +1244,26 @@ LIMIT 10;
 3. 进入 Agent 市场
 4. 选择一个已通过 review_agent 审核的 Agent
 5. 点击购买
-6. 钱包弹出 approve
-7. approve 成功
-8. 钱包弹出 createOrder
-9. 前端显示“资金已进入链上托管”
-10. 后台订单状态变为 PAID_ESCROW
-11. 切换到卖家 / Admin 操作交付
-12. 调用 markDelivered
-13. 买家页面显示“卖家已交付”
-14. 买家点击确认交付
-15. 钱包弹出 confirmDelivery
-16. 链上放款给卖家
-17. 前端显示订单 Completed
-18. 打开 Explorer 展示交易
+6. 前端显示付款信息：平台收款钱包地址 + USDT 金额 + 过期时间
+7. 买家用自己的钱包向平台钱包转账 USDT
+8. 买家提交转账 tx_hash
+9. deposit_verify_job 校验入账
+10. 前端显示”资金已托管（ESCROW_HELD）”
+11. 切换到卖家操作，提交 delivery
+12. 买家页面显示”卖家已交付”
+13. 买家点击确认交付
+14. Java 创建 payout_job
+15. payout_execute_job 用平台钱包链上放款给卖家
+16. 前端显示订单 Completed + 放款 tx_hash
+17. 打开 Explorer 展示 Token Transfer（平台钱包 → 卖家）
 ```
 
 演讲强调：
 
 ```text
 这不是平台内部记账。
-这是链上真实 Escrow。
-资金先进入合约，确认后才到卖家。
+这是真实的链上 Token 转账托管。
+买家的钱先进入平台钱包，确认交付后平台再链上打给卖家。
 ```
 
 ---
@@ -1421,23 +1274,23 @@ LIMIT 10;
 
 ```text
 1. 打开一个已 Delivered 的订单
-2. 买家点击“我不满意，发起纠纷”
-3. 钱包调用 raiseDispute
+2. 买家点击”我不满意，发起纠纷”
+3. 填写投诉原因
 4. support_agent 自动识别售后问题
-5. dispute_agent 读取订单和投诉
+5. dispute_agent 读取订单、投诉、交付记录
 6. dispute_agent 建议 PARTIAL_REFUND 50%
 7. Admin 后台显示：
    - Agent 建议
    - 退款比例
    - 理由
    - 风险
-8. Admin 点击“按 Agent 建议处理”
-9. Java 用 arbitrator 钱包调用 resolveDispute(orderId, 5000)
-10. 链上完成部分退款
+8. Admin 点击”按 Agent 建议处理”
+9. Java 创建 refund_job（买家 50%）+ payout_job（卖家 50%）
+10. payout_execute_job 用平台钱包分别执行
 11. 前端显示：
-    - buyer refund
-    - seller receive
-    - tx hash
+    - buyer 收到退款 tx_hash
+    - seller 收到放款 tx_hash
+    - 订单状态 PARTIALLY_REFUNDED
 ```
 
 演讲强调：
@@ -1445,7 +1298,7 @@ LIMIT 10;
 ```text
 Agent 不直接碰钱。
 Agent 只给仲裁建议。
-最终资金动作由 Admin / arbitrator 通过智能合约执行。
+最终资金动作由 Admin 确认、Java Job 通过平台钱包链上执行。
 ```
 
 ---
@@ -1665,68 +1518,80 @@ mysql -u nicolas -p nicolas < /root/Nicolas/scripts/seed_demo_data.sql
 ```text
 [ ] 前端首页可访问
 [ ] 登录正常
-[ ] 钱包连接正常
-[ ] chainId 检测正常
-[ ] approve 正常
-[ ] createOrder 正常
-[ ] Java 能记录 tx_hash
-[ ] DB 中有 onchain_orders
-[ ] markDelivered 正常
-[ ] confirmDelivery 正常
+[ ] 钱包绑定正常（OKX Web3 钱包）
+[ ] 买家下单，获取平台收款钱包地址
+[ ] 向平台钱包转账 USDT 正常
+[ ] 提交 tx_hash 正常
+[ ] deposit_verify_job 校验入账正常
+[ ] DB 中有 payment_orders + wallet_transactions + payment_ledger
+[ ] 订单状态流转到 ESCROW_HELD
+[ ] 卖家提交 delivery
+[ ] 买家确认交付
+[ ] Java 创建 payout_job
+[ ] payout_execute_job 执行放款
 [ ] seller Token 余额增加
-[ ] raiseDispute 正常
-[ ] dispute_agent 能生成建议
-[ ] Admin resolveDispute 正常
-[ ] buyer / seller 退款和收款结果正确
-[ ] Explorer 能查交易
+[ ] Explorer 出现 Token Transfer（平台钱包 → 卖家）
+[ ] raiseDispute（前端 + DB）正常
+[ ] dispute_agent 能生成仲裁建议
+[ ] Admin 裁决，生成 refund_job + payout_job
+[ ] 退款 / 部分退款执行正常
+[ ] 前端显示正确状态和 tx_hash
 [ ] 服务重启后自动恢复
 [ ] Demo 预置订单可用
-[ ] Demo Mode 可用
+[ ] Demo Mode（Agent AI fallback）可用
 ```
 
 ---
 
 ## 14. 最终路线图
 
-## 第一步：先打通链上正常买卖
+## 第一步：先打通 V1 正常买卖
 
 ```text
-DemoUSDT / USDT
+平台收款钱包配置
   ↓
-approve
+买家下单获取收款信息
   ↓
-createOrder
+买家向平台钱包转账 USDT
   ↓
-markDelivered
+deposit_verify_job 校验入账
   ↓
-confirmDelivery
+payment_ledger 锁定
   ↓
-seller 收款
+卖家交付
+  ↓
+买家确认
+  ↓
+payout_job 放款
+  ↓
+seller 收款（Explorer 可查）
 ```
 
 这是 Demo 最重要的部分。
 
 ---
 
-## 第二步：再打通链上纠纷
+## 第二步：再打通纠纷仲裁
 
 ```text
-createOrder
+订单进入 ESCROW_HELD
   ↓
-markDelivered
+卖家交付
   ↓
-raiseDispute
+买家发起纠纷
   ↓
 support_agent 分流
   ↓
 dispute_agent 建议
   ↓
-Admin resolveDispute
+Admin 裁决
+  ↓
+refund_job + payout_job
   ↓
 buyer / seller 收到对应资金
 ```
 
-这是最能体现 Agent + 合约协作的部分。
+这是最能体现 Agent + 平台托管协作的部分。
 
 ---
 
@@ -1755,9 +1620,9 @@ Agent 上架
   ↓
 Java + Python + Frontend + MySQL
   ↓
-X Layer RPC
+X Layer RPC（用于校验 tx 和执行放款）
   ↓
-AgentEscrow 合约
+平台收款钱包配置
   ↓
 全链路彩排
 ```
@@ -1766,41 +1631,43 @@ AgentEscrow 合约
 
 ## 15. 最终结论
 
-这版 Demo 的研发目标是：
+这版 Demo（V1）的研发目标是：
 
 ```text
 不只是 Agent Orchestrator，
-而是 Agent + Marketplace + Escrow 的完整买卖闭环。
+而是 Agent + Marketplace + 平台钱包托管的完整买卖闭环。
 ```
 
 部署目标是：
 
 ```text
-前端、Java、Python、MySQL、AgentEscrow 合约全部跑起来。
+前端、Java、Python、MySQL 全部跑起来。
+平台收款钱包配置完成。
+X Layer RPC 连通，可以查询和执行链上 Token 转账。
 ```
 
 测试目标是：
 
 ```text
-现场能完成真实链上支付、托管、交付、放款；
-同时能演示退款纠纷的链上仲裁闭环。
+现场能完成真实链上 USDT 支付、托管、交付、放款；
+同时能演示退款纠纷的仲裁和 Job 放款闭环。
 ```
 
 最终 Demo 叙事：
 
 ```text
-普通订单：
-  用户支付 → 合约托管 → 卖家交付 → 买家确认 → 链上放款
+普通订单（V1）：
+  买家向平台钱包转账 → DB Ledger 锁定 → 卖家交付 → 买家确认 → Job 链上放款给卖家
 
-纠纷订单：
-  用户投诉 → 客服 Agent 分流 → 纠纷 Agent 建议 → Admin 仲裁 → 链上退款 / 放款
+纠纷订单（V1）：
+  用户投诉 → 客服 Agent 分流 → 纠纷 Agent 建议 → Admin 裁决 → Job 退款 / 放款
 ```
 
 这个 Demo 才能完整表达 Nicolas 的核心价值：
 
 ```text
 Agent 负责智能判断
-合约负责资金可信托管
+平台钱包 + Job 负责资金可信托管（V1）/ 智能合约负责（V2）
 Admin 负责最终安全控制
 平台负责把三者组合成可用的服务市场
 ```

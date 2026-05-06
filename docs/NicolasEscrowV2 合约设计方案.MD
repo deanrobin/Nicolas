@@ -1,5 +1,15 @@
 # NicolasEscrowV2 合约设计方案
 
+状态：**V2 合约托管方案（升级路径）**  
+版本：v0.1  
+日期：2026-05-06
+
+> **与 V1 的关系**：Nicolas V1 Demo 使用**平台钱包托管**（Java DB Ledger + Job 放款），不依赖本合约。  
+> 本合约是 V2 升级目标，在 Demo MVP 跑通后迁移使用。  
+> V1 平台钱包方案详见：[Nicolas 支付托管 V1 平台钱包方案.MD](./Nicolas%20支付托管%20V1%20平台钱包方案.MD)
+
+---
+
 ## 1. 目标
 
 `NicolasEscrowV2` 是 Nicolas Demo 的链上资金托管合约，负责完成完整买卖闭环：

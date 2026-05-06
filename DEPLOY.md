@@ -113,6 +113,19 @@ Environment=JWT_SECRET=换成一个随机32位字符串
 Environment=JWT_EXPIRATION_DAYS=7
 Environment=MAIL_DEV_MODE=true
 
+# V1 支付托管（平台钱包）
+Environment=PAYMENT_MODE=PLATFORM_WALLET
+Environment=XLAYER_RPC_URL=https://rpc.xlayer.tech
+Environment=XLAYER_CHAIN_ID=196
+Environment=XLAYER_USDT_ADDRESS=0x1E4a5963aBFD975d8c9021ce480b42188849D41d
+Environment=PLATFORM_WALLET_ADDRESS=0x你的平台收款钱包地址
+Environment=PLATFORM_WALLET_PRIVATE_KEY=你的平台钱包私钥（仅服务器env）
+Environment=PAYOUT_JOB_ENABLED=true
+
+# V2 合约托管（升级后启用）
+# Environment=ESCROW_CONTRACT_ADDRESS=0x合约地址
+# Environment=OPERATOR_PRIVATE_KEY=合约owner私钥
+
 [Install]
 WantedBy=multi-user.target
 ```

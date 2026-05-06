@@ -149,6 +149,15 @@ certbot renew --dry-run
 | `MAIL_USER` | — | 邮箱账号 |
 | `MAIL_PASS` | — | 邮箱授权码 |
 | `MAIL_DEV_MODE` | `true` | true=打印验证码到日志，不发邮件 |
+| `PAYMENT_MODE` | `PLATFORM_WALLET` | 支付模式：`PLATFORM_WALLET`(V1) / `CONTRACT`(V2) |
+| `XLAYER_RPC_URL` | `https://rpc.xlayer.tech` | XLayer JSON-RPC |
+| `XLAYER_CHAIN_ID` | `196` | 196=主网，195=测试网 |
+| `XLAYER_USDT_ADDRESS` | (主网 USDT) | XLayer USDT ERC-20 合约地址 |
+| `PLATFORM_WALLET_ADDRESS` | — | 平台收款钱包地址（V1 收款） |
+| `PLATFORM_WALLET_PRIVATE_KEY` | — | **机密** 平台钱包私钥（V1 放款 Job 使用） |
+| `PAYOUT_JOB_ENABLED` | `true` | 启用放款 Job |
+| `ESCROW_CONTRACT_ADDRESS` | — | NicolasEscrowV2 合约地址（V2 升级后使用） |
+| `OPERATOR_PRIVATE_KEY` | — | **机密** 合约 owner / arbitrator 私钥（V2 升级后使用） |
 
 ---
 

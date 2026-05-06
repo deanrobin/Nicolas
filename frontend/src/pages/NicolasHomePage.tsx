@@ -197,7 +197,7 @@ function Stat({ k, v, sub }: { k: string; v: string; sub: string }) {
 // ── Sections ─────────────────────────────────────────────────────────────────
 
 function TopNav({ onLogin, isLoggedIn, onDashboard }: { onLogin: () => void; isLoggedIn: boolean; onDashboard: () => void }) {
-  const navLinks = ['Market', 'Skills', 'Plaza', 'Directory', 'Docs']
+  const navLinks = ['Market'] // 'Skills', 'Plaza', 'Directory', 'Docs'
   return (
     <header style={{
       position: 'sticky', top: 0, zIndex: 30,
@@ -241,14 +241,9 @@ function TopNav({ onLogin, isLoggedIn, onDashboard }: { onLogin: () => void; isL
               Go to Dashboard →
             </Hairline>
           ) : (
-            <>
-              <Hairline accent="ghost" style={{ padding: '8px 14px', fontSize: 12.5 }} onClick={onLogin}>
-                Sign In
-              </Hairline>
-              <Hairline accent="gold" style={{ padding: '8px 16px', fontSize: 12.5 }} onClick={onLogin}>
-                Get Started
-              </Hairline>
-            </>
+            <Hairline accent="gold" style={{ padding: '8px 16px', fontSize: 12.5 }} onClick={onLogin}>
+              Get Started
+            </Hairline>
           )}
         </div>
       </div>

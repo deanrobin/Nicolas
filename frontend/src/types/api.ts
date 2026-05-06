@@ -146,6 +146,35 @@ export interface MyListings {
   skills: SkillListing[]
 }
 
+// ── Payment Orders (V1 platform wallet escrow) ────────────────────────────
+export type OrderStatus =
+  | 'pending_payment'
+  | 'confirming'
+  | 'paid'
+  | 'delivered'
+  | 'refunded'
+
+export interface PaymentOrder {
+  id: number
+  orderType: 'SKILL' | 'AGENT'
+  listingId: number
+  buyerId: number
+  merchantId: number
+  amountUsdt: string
+  status: OrderStatus
+  platformWalletAddress: string
+  txHash: string | null
+  note: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface BuySkillResponse {
+  order: PaymentOrder
+  usdtAddress: string
+  chainId: number
+}
+
 // ── window.ethereum (EIP-1193) ────────────────────────────────────────────
 declare global {
   interface Window {

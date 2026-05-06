@@ -4,9 +4,11 @@ import type {
   ApiResponse,
   AuthResponse,
   AuthUser,
+  BuySkillResponse,
   Merchant,
   MerchantRegisterRequest,
   MyListings,
+  PaymentOrder,
   ProviderStats,
   SkillListing,
   SkillListingRequest,
@@ -175,6 +177,17 @@ export const merchantApi = {
 export const marketApi = {
   agents: () => request<AgentListing[]>('/market/agents'),
   skills: () => request<SkillListing[]>('/market/skills'),
+
+  buySkill: (skillId: number) =>
+    request<BuySkillResponse>(`/market/skills/${skillId}/buy`, { method: 'POST' }),
+
+  submitTx: (orderId: number, txHash: string) =>
+    request<PaymentOrder>(`/market/orders/${orderId}/submit-tx`, {
+      method: 'POST',
+      body: JSON.stringify({ txHash }),
+    }),
+
+  myOrders: () => request<PaymentOrder[]>('/market/orders/mine'),
 }
 
 // ── Provider (service_provider admin) ────────────────────────────────────

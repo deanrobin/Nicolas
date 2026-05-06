@@ -110,6 +110,22 @@ Agents maintain persistent memory stored as JSON files in `agent/memory/data/<ag
 
 ---
 
+## Payment Roadmap
+
+Nicolas uses a **phased escrow approach**:
+
+| Phase | Method | Status |
+|---|---|---|
+| **V1 (Demo / MVP)** | Platform wallet escrow — buyer transfers USDT to the platform wallet; Java DB Ledger records the lock; Java Jobs execute payout / refund | ✅ Current implementation |
+| **V2 (Upgrade path)** | Smart contract escrow — `NicolasEscrowV2` contract handles on-chain locking, `markDelivered`, `confirmDelivery`, `resolveDispute` | 🚧 Future upgrade |
+
+In V1, the **"escrow"** is a business concept enforced by DB Ledger + scheduled Jobs, not a smart contract.  
+In V2, the escrow layer is replaced by `NicolasEscrowV2` — the DB and business logic remain intact.
+
+See [`docs/Nicolas 支付托管 V1 平台钱包方案.MD`](docs/Nicolas%20支付托管%20V1%20平台钱包方案.MD) for the full V1 design.
+
+---
+
 ---
 
 ## 中文

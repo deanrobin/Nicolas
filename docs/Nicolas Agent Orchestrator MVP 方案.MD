@@ -125,7 +125,8 @@ Admin 后台展示
   ↓
 Java 执行最终业务动作
   ↓
-必要时 Java 调用合约
+V1：Java 创建 payout_job / refund_job，由 Job 链上转账
+V2（升级后）：Java 调用合约 resolveDispute
 ```
 
 纠纷类不设置：
@@ -154,7 +155,7 @@ Java Admin Backend
   ↓
 管理员确认
   ↓
-Java 执行业务状态变更 / 合约动作
+Java 执行业务状态变更 / 资金动作（V1 = payout_job；V2 = 合约调用）
 ```
 
 更详细结构：
@@ -203,8 +204,11 @@ Java 执行业务状态变更 / 合约动作
                                  │
                                  ▼
                        ┌────────────────────┐
-                       │ Escrow Contract     │
-                       │ 托管/放款/退款      │
+                       │ 资金托管层          │
+                       │ V1: payout_job      │
+                       │   平台钱包链上转账  │
+                       │ V2: Escrow Contract │
+                       │   resolveDispute    │
                        └────────────────────┘
 ```
 

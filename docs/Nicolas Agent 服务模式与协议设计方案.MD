@@ -1,8 +1,10 @@
 # Nicolas Agent 服务模式与协议设计方案
 
-> 版本：v0.1  
+> 版本：v0.2  
 > 适用项目路径：`/root/Nicolas`  
 > 设计目标：为 Nicolas 的 Agent 商品设计一套可交易、可代理调用、可多轮交互、可交付验收、可纠纷审计的服务标准。
+>
+> **资金托管说明**：本文件描述的 Agent 服务协议适用于 V1（平台钱包托管）和 V2（合约托管）。V1 中交付后由 Java Job 执行放款，V2 中交付后调用 NicolasEscrowV2.markDelivered。详见：[Nicolas 支付托管 V1 平台钱包方案.MD](./Nicolas%20支付托管%20V1%20平台钱包方案.MD)
 
 ---
 
@@ -238,11 +240,11 @@ Buyer → Nicolas Frontend → Java Backend → Agent Service Gateway → Seller
                              │
                              ▼
                    ┌────────────────────┐
-                   │ Escrow Contract     │
-                   │ markDelivered       │
-                   │ confirmDelivery     │
-                   │ raiseDispute        │
-                   │ resolveDispute      │
+                   │ 资金托管层          │
+                   │ V1: 平台钱包+Job    │
+                   │   payout_job放款   │
+                   │ V2: EscrowContract │
+                   │   markDelivered    │
                    └────────────────────┘
 ```
 
@@ -1900,7 +1902,7 @@ Agent Service Gateway
 
 ---
 
-## 25. 与链上 Escrow 的关系
+## 25. 与资金托管层的关系
 
 Agent 服务完成后，平台要生成：
 
@@ -1909,24 +1911,36 @@ content_hash
 deliveryHash
 ```
 
-然后调用链上：
+然后更新资金托管状态（V1 / V2 不同实现）：
 
-```solidity
-markDelivered(orderId, deliveryHash)
-```
-
-推荐流程：
+**V1 平台钱包托管（Demo 当前方案）**：
 
 ```text
 卖家 Agent 返回 FINAL_DELIVERY
   ↓
 平台保存 delivery
   ↓
-平台计算 content_hash
+平台计算 content_hash + deliveryHash
   ↓
-平台计算 onchain_delivery_hash
+Java 更新 payment_order.status = DELIVERED
   ↓
-平台调用 NicolasEscrowV2.markDelivered
+DB 记录 deliveryHash
+  ↓
+买家可以确认交付或发起纠纷
+  ↓
+买家确认 → Java 创建 payout_job → payout_execute_job 放款
+```
+
+**V2 合约托管（升级路径）**：
+
+```text
+卖家 Agent 返回 FINAL_DELIVERY
+  ↓
+平台保存 delivery
+  ↓
+平台计算 content_hash + onchain_delivery_hash
+  ↓
+平台调用 NicolasEscrowV2.markDelivered(orderId, deliveryHash)
   ↓
 链上状态变 Delivered
   ↓
@@ -1964,69 +1978,70 @@ IPFS
 
 ---
 
-## 26. 谁来调用 markDelivered
+## 26. 谁来标记交付
 
-Agent 服务返回结果后，需要有人链上标记交付。
+Agent 服务返回结果后，需要有人标记交付状态。
 
-不建议买家调用 `markDelivered`，因为这是卖家侧交付行为。
+不建议买家来标记交付，因为这是卖家侧交付行为。
 
-三种方案：
+**V1 Demo 推荐方式**：
 
-## 26.1 卖家自己调用链上
+## 26.1 平台托管 Agent 由 Java 标记交付
+
+如果 Agent 是平台托管的（PLATFORM_HOSTED），那么卖家已经把执行交给 Nicolas。
+
+流程：
 
 ```text
-卖家 Agent 返回结果
+Python Orchestrator 运行 Agent
   ↓
-卖家 backend 用 seller wallet 调 markDelivered
+生成结果（FINAL_DELIVERY）
+  ↓
+Java 保存 result + delivery
+  ↓
+Java 更新 payment_order.status = DELIVERED
+  ↓
+买家收到通知，可以确认或发起纠纷
 ```
 
-优点：
-
-```text
-最去中心化
-卖家自己声明已交付
-```
-
-缺点：
-
-```text
-卖家 endpoint 必须持有钱包私钥
-卖家开发成本高
-Demo 容易失败
-```
-
-Demo 不推荐。
+V1 Demo 第一版建议采用这个方式。
 
 ---
 
-## 26.2 平台 Delivery Operator 代标记交付
+## 26.2 外部卖家 Agent（V1）：平台代标记交付
 
 ```text
 卖家上架时同意：
 Nicolas 收到有效 FINAL_DELIVERY 后，可以代表卖家标记 delivered。
 ```
 
-流程：
+流程（V1）：
 
 ```text
 卖家 Agent 返回 FINAL_DELIVERY
   ↓
-Nicolas 保存 result
+Nicolas 保存 result + delivery
+  ↓
+Nicolas 更新 payment_order.status = DELIVERED
+  ↓
+买家可以确认交付或发起纠纷
+```
+
+---
+
+## 26.3 V2 合约方式（升级路径）
+
+V2 升级后，标记交付方式变为：
+
+```text
+卖家 Agent 返回 FINAL_DELIVERY
   ↓
 Nicolas 计算 deliveryHash
   ↓
-Nicolas 的 delivery operator 调 markDelivered
+Nicolas 用 delivery operator 钱包调 NicolasEscrowV2.markDelivered
 ```
 
-推荐 Demo 使用这个模式。
-
-合约层建议支持：
-
-```text
-seller 本人 或 seller 授权的 delivery operator 可以 markDelivered。
-```
-
-Delivery Operator 权限应该非常窄：
+Delivery Operator 在 V2 合约中权限应该非常窄：
 
 ```text
 只能 markDelivered。
@@ -2035,26 +2050,6 @@ Delivery Operator 权限应该非常窄：
 不能提款。
 不能修改订单。
 ```
-
----
-
-## 26.3 平台托管 Agent 直接由平台标记交付
-
-如果 Agent 是平台托管的，那么卖家已经把执行交给 Nicolas。
-
-流程：
-
-```text
-Python Orchestrator 运行 Agent
-  ↓
-生成结果
-  ↓
-Java 保存结果
-  ↓
-Java 调 markDelivered
-```
-
-Demo 第一版建议采用这个方式。
 
 ---
 
@@ -2354,8 +2349,8 @@ seller callback
 [ ] 保存 request / response。
 [ ] 保存 delivery。
 [ ] 生成 deliveryHash。
-[ ] 调链上 markDelivered。
-[ ] 买家 confirmDelivery。
+[ ] 更新 payment_order.status = DELIVERED（V1）/ 调合约 markDelivered（V2）。
+[ ] 买家确认交付 → 创建 payout_job（V1）/ confirmDelivery（V2）。
 [ ] dispute_agent 能读取 messages / calls / delivery。
 ```
 
@@ -2438,5 +2433,5 @@ Agent 是买服务。
 调用必须留痕。
 交付必须有 hash。
 纠纷必须有证据。
-资金必须走链上 Escrow。
+资金必须走资金托管层（V1 = 平台钱包 + DB Ledger + Job；V2 = 链上 Escrow 合约）。
 ```

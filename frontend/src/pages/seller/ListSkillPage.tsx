@@ -1,10 +1,14 @@
 import { useEffect, useState } from 'react'
-import { Card, Form, Input, InputNumber, Select, Button, Typography, Space, Alert, Spin } from 'antd'
-import { ShoppingOutlined } from '@ant-design/icons'
+import {
+  Card, Form, Input, InputNumber, Select, Button, Typography, Space,
+  Alert, Spin, Upload,
+} from 'antd'
+import { ShoppingOutlined, UploadOutlined, FileOutlined } from '@ant-design/icons'
 import { useNavigate, useParams } from 'react-router-dom'
 import { App as AntApp } from 'antd'
 import { merchantApi } from '../../api/client'
 import type { SkillListing } from '../../types/api'
+import type { UploadFile } from 'antd/es/upload/interface'
 
 const { Title, Paragraph, Text } = Typography
 
@@ -28,6 +32,9 @@ export default function ListSkillPage() {
   const [loading, setLoading] = useState(editMode)
   const [submitting, setSubmitting] = useState(false)
   const [original, setOriginal] = useState<SkillListing | null>(null)
+  const [fileList, setFileList] = useState<UploadFile[]>([])
+  const [uploadedPath, setUploadedPath] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
 
   useEffect(() => {
     if (!editMode || skillId == null) return
@@ -52,12 +59,15 @@ export default function ListSkillPage() {
         }
         if (cancelled) return
         setOriginal(row)
+        if (row.filePath) setUploadedPath(row.filePath)
         form.setFieldsValue({
           name: row.name,
           description: row.description,
           category: row.category ?? undefined,
           priceUsdt: Number(row.priceUsdt),
           downloadUrl: row.downloadUrl ?? '',
+          serviceInput: row.serviceInput ?? '',
+          serviceOutput: row.serviceOutput ?? '',
           tags: row.tags ?? '',
         })
       } catch (err) {
@@ -67,10 +77,22 @@ export default function ListSkillPage() {
         if (!cancelled) setLoading(false)
       }
     })()
-    return () => {
-      cancelled = true
-    }
+    return () => { cancelled = true }
   }, [editMode, skillId, form, navigate, message])
+
+  const handleUpload = async (file: File): Promise<boolean> => {
+    setUploading(true)
+    try {
+      const path = await merchantApi.uploadSkillFile(file)
+      setUploadedPath(path)
+      message.success(`文件上传成功 / File uploaded: ${path.split('/').pop()}`)
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : '上传失败 / Upload failed')
+    } finally {
+      setUploading(false)
+    }
+    return false // prevent antd auto-upload
+  }
 
   const onFinish = async (values: Record<string, unknown>) => {
     setSubmitting(true)
@@ -80,6 +102,9 @@ export default function ListSkillPage() {
       category: values.category as string,
       priceUsdt: String(values.priceUsdt),
       downloadUrl: (values.downloadUrl as string) || undefined,
+      filePath: uploadedPath ?? undefined,
+      serviceInput: (values.serviceInput as string) || undefined,
+      serviceOutput: (values.serviceOutput as string) || undefined,
       tags: (values.tags as string) || undefined,
     }
     try {
@@ -110,6 +135,9 @@ export default function ListSkillPage() {
         category: original.category ?? undefined,
         priceUsdt: original.priceUsdt,
         downloadUrl: original.downloadUrl ?? undefined,
+        filePath: original.filePath ?? undefined,
+        serviceInput: original.serviceInput ?? undefined,
+        serviceOutput: original.serviceOutput ?? undefined,
         tags: original.tags ?? undefined,
       })
     } catch {
@@ -172,7 +200,7 @@ export default function ListSkillPage() {
 
           <Form.Item
             name="category"
-            label={<Label zh="分类" en="Category" />}
+            label={<Label zh="分类 / 赛道" en="Category" />}
             rules={[{ required: true }]}
           >
             <Select
@@ -185,6 +213,7 @@ export default function ListSkillPage() {
                 { label: '模板 / Template', value: 'template' },
                 { label: '微调 / Fine-tune', value: 'finetune' },
                 { label: 'RAG 检索', value: 'rag' },
+                { label: '数据集 / Dataset', value: 'dataset' },
                 { label: '其他 / Other', value: 'other' },
               ]}
             />
@@ -204,6 +233,38 @@ export default function ListSkillPage() {
             }
           >
             <Input.TextArea rows={5} size="large" placeholder="例如：80+ 加密货币交易提示词，覆盖技术面、链上、宏观……" />
+          </Form.Item>
+
+          <Form.Item
+            name="serviceInput"
+            label={<Label zh="使用前提 / 输入要求" en="Service Input" />}
+            extra={
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                买家使用此 Skill 需要具备什么前提知识或输入 / What does the buyer need to know or provide?
+              </Text>
+            }
+          >
+            <Input.TextArea
+              rows={3}
+              size="large"
+              placeholder="例如：需要有 ChatGPT / Claude / Gemini 账号，具备基础英文阅读能力"
+            />
+          </Form.Item>
+
+          <Form.Item
+            name="serviceOutput"
+            label={<Label zh="交付物说明 / 输出" en="Service Output" />}
+            extra={
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                买家将获得什么内容 / What will the buyer receive?
+              </Text>
+            }
+          >
+            <Input.TextArea
+              rows={3}
+              size="large"
+              placeholder="例如：一个 .zip 包，含 80 个提示词 .md 文件 + 使用指南"
+            />
           </Form.Item>
 
           <Form.Item
@@ -231,11 +292,47 @@ export default function ListSkillPage() {
           </Form.Item>
 
           <Form.Item
-            name="downloadUrl"
-            label={<Label zh="交付物下载地址（选填）" en="Download URL (optional)" />}
+            label={<Label zh="Skill 文件上传（推荐）" en="Upload Skill File (recommended)" />}
             extra={
               <Text type="secondary" style={{ fontSize: 12 }}>
-                买家付款后获取的下载链接，demo 阶段可留空 / Delivery URL after payment; can be empty for demo.
+                支持 zip / pdf / txt / md / json / yaml / py / ipynb，最大 50 MB。文件由平台托管，买家付款后可下载。
+                <br />
+                Supported: zip, pdf, txt, md, json, yaml, py, ipynb — max 50 MB. Hosted by platform; buyer downloads after payment.
+              </Text>
+            }
+          >
+            <Upload
+              fileList={fileList}
+              beforeUpload={(file) => {
+                setFileList([file as unknown as UploadFile])
+                handleUpload(file)
+                return false
+              }}
+              onRemove={() => {
+                setFileList([])
+                setUploadedPath(null)
+              }}
+              maxCount={1}
+              accept=".zip,.pdf,.txt,.md,.json,.yaml,.yml,.py,.ipynb"
+            >
+              <Button icon={<UploadOutlined />} loading={uploading}>
+                选择文件 / Select File
+              </Button>
+            </Upload>
+            {uploadedPath && (
+              <div style={{ marginTop: 8, color: '#52c41a' }}>
+                <FileOutlined style={{ marginRight: 4 }} />
+                已上传 / Uploaded: {uploadedPath.split('/').pop()}
+              </div>
+            )}
+          </Form.Item>
+
+          <Form.Item
+            name="downloadUrl"
+            label={<Label zh="外部下载地址（选填）" en="External Download URL (optional)" />}
+            extra={
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                如果文件托管在第三方（如 Google Drive），可填此链接作为补充 / Optional: external link if hosted elsewhere.
               </Text>
             }
           >

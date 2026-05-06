@@ -100,6 +100,9 @@ public class MerchantService {
         a.setCategory(req.getCategory());
         a.setPriceUsdt(req.getPriceUsdt());
         a.setApiEndpoint(req.getApiEndpoint());
+        a.setDeploymentMode(req.getDeploymentMode() != null ? req.getDeploymentMode() : "EXTERNAL");
+        a.setServiceInput(req.getServiceInput());
+        a.setServiceOutput(req.getServiceOutput());
         a.setTags(req.getTags());
         a.setStatus("pending");
         return agentRepo.save(a);
@@ -117,6 +120,9 @@ public class MerchantService {
         s.setCategory(req.getCategory());
         s.setPriceUsdt(req.getPriceUsdt());
         s.setDownloadUrl(req.getDownloadUrl());
+        s.setFilePath(req.getFilePath());
+        s.setServiceInput(req.getServiceInput());
+        s.setServiceOutput(req.getServiceOutput());
         s.setTags(req.getTags());
         s.setStatus("pending");
         return skillRepo.save(s);
@@ -177,6 +183,9 @@ public class MerchantService {
         a.setCategory(req.getCategory());
         a.setPriceUsdt(req.getPriceUsdt());
         a.setApiEndpoint(req.getApiEndpoint());
+        a.setDeploymentMode(req.getDeploymentMode() != null ? req.getDeploymentMode() : "EXTERNAL");
+        a.setServiceInput(req.getServiceInput());
+        a.setServiceOutput(req.getServiceOutput());
         a.setTags(req.getTags());
         a.setStatus("pending");
         a.setReviewReason(null);
@@ -205,6 +214,9 @@ public class MerchantService {
         s.setCategory(req.getCategory());
         s.setPriceUsdt(req.getPriceUsdt());
         s.setDownloadUrl(req.getDownloadUrl());
+        s.setFilePath(req.getFilePath());
+        s.setServiceInput(req.getServiceInput());
+        s.setServiceOutput(req.getServiceOutput());
         s.setTags(req.getTags());
         s.setStatus("pending");
         s.setReviewReason(null);

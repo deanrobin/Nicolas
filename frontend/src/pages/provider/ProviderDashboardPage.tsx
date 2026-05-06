@@ -188,6 +188,14 @@ export default function ProviderDashboardPage() {
     { title: 'Name', dataIndex: 'name' },
     { title: 'Category', dataIndex: 'category' },
     {
+      title: 'Mode',
+      dataIndex: 'deploymentMode',
+      width: 100,
+      render: (v: string) => v === 'HOSTED'
+        ? <Tag color="purple">Hosted</Tag>
+        : <Tag color="blue">External</Tag>,
+    },
+    {
       title: 'Price',
       dataIndex: 'priceUsdt',
       render: (v: string) => <Text strong>{v} USDT</Text>,
@@ -203,7 +211,18 @@ export default function ProviderDashboardPage() {
       title: 'Description',
       dataIndex: 'description',
       ellipsis: true,
-      width: 220,
+      width: 200,
+    },
+    {
+      title: 'Input / Output',
+      key: 'io',
+      width: 200,
+      render: (_: unknown, row: AgentListing) => (
+        <div style={{ fontSize: 12 }}>
+          {row.serviceInput && <div><Text type="secondary">In: </Text>{row.serviceInput.slice(0, 60)}{row.serviceInput.length > 60 ? '…' : ''}</div>}
+          {row.serviceOutput && <div><Text type="secondary">Out: </Text>{row.serviceOutput.slice(0, 60)}{row.serviceOutput.length > 60 ? '…' : ''}</div>}
+        </div>
+      ),
     },
     { title: 'Submitted', dataIndex: 'createdAt', width: 170 },
     actionCol('agent'),
@@ -226,10 +245,28 @@ export default function ProviderDashboardPage() {
       ),
     },
     {
+      title: 'File',
+      key: 'file',
+      width: 80,
+      render: (_: unknown, row: SkillListing) =>
+        row.filePath ? <Tag color="green">Server</Tag> : row.downloadUrl ? <Tag color="blue">URL</Tag> : <Tag>None</Tag>,
+    },
+    {
       title: 'Description',
       dataIndex: 'description',
       ellipsis: true,
-      width: 220,
+      width: 180,
+    },
+    {
+      title: 'Input / Output',
+      key: 'io',
+      width: 200,
+      render: (_: unknown, row: SkillListing) => (
+        <div style={{ fontSize: 12 }}>
+          {row.serviceInput && <div><Text type="secondary">In: </Text>{row.serviceInput.slice(0, 60)}{row.serviceInput.length > 60 ? '…' : ''}</div>}
+          {row.serviceOutput && <div><Text type="secondary">Out: </Text>{row.serviceOutput.slice(0, 60)}{row.serviceOutput.length > 60 ? '…' : ''}</div>}
+        </div>
+      ),
     },
     { title: 'Submitted', dataIndex: 'createdAt', width: 170 },
     actionCol('skill'),

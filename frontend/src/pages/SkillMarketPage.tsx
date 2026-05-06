@@ -123,6 +123,23 @@ export default function SkillMarketPage() {
                         {s.description}
                       </Paragraph>
 
+                      {(s.serviceInput || s.serviceOutput) && (
+                        <div style={{ marginBottom: 12, fontSize: 12, background: '#fff9f0', borderRadius: 8, padding: '8px 10px' }}>
+                          {s.serviceInput && (
+                            <div style={{ marginBottom: 4 }}>
+                              <Text type="secondary">需要 / Requires: </Text>
+                              <Text style={{ fontSize: 12 }}>{s.serviceInput.slice(0, 80)}{s.serviceInput.length > 80 ? '…' : ''}</Text>
+                            </div>
+                          )}
+                          {s.serviceOutput && (
+                            <div>
+                              <Text type="secondary">交付 / Delivers: </Text>
+                              <Text style={{ fontSize: 12 }}>{s.serviceOutput.slice(0, 80)}{s.serviceOutput.length > 80 ? '…' : ''}</Text>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                       {tags.length > 0 && (
                         <div style={{ marginBottom: 12 }}>
                           {tags.map((t) => (

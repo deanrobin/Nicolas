@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react'
-import { Card, Form, Input, InputNumber, Select, Button, Typography, Space, Alert, Spin } from 'antd'
-import { AppstoreAddOutlined } from '@ant-design/icons'
+import {
+  Card, Form, Input, InputNumber, Select, Button, Typography, Space,
+  Alert, Spin, Radio, Tag,
+} from 'antd'
+import { AppstoreAddOutlined, GlobalOutlined, CloudServerOutlined } from '@ant-design/icons'
 import { useNavigate, useParams } from 'react-router-dom'
 import { App as AntApp } from 'antd'
 import { merchantApi } from '../../api/client'
-import type { AgentListing } from '../../types/api'
+import type { AgentListing, AgentDeploymentMode } from '../../types/api'
 
 const { Title, Paragraph, Text } = Typography
 
@@ -28,6 +31,7 @@ export default function ListAgentPage() {
   const [loading, setLoading] = useState(editMode)
   const [submitting, setSubmitting] = useState(false)
   const [original, setOriginal] = useState<AgentListing | null>(null)
+  const [deploymentMode, setDeploymentMode] = useState<AgentDeploymentMode>('EXTERNAL')
 
   useEffect(() => {
     if (!editMode || agentId == null) return
@@ -52,12 +56,17 @@ export default function ListAgentPage() {
         }
         if (cancelled) return
         setOriginal(row)
+        const mode: AgentDeploymentMode = (row.deploymentMode as AgentDeploymentMode) || 'EXTERNAL'
+        setDeploymentMode(mode)
         form.setFieldsValue({
           name: row.name,
           description: row.description,
           category: row.category ?? undefined,
           priceUsdt: Number(row.priceUsdt),
+          deploymentMode: mode,
           apiEndpoint: row.apiEndpoint ?? '',
+          serviceInput: row.serviceInput ?? '',
+          serviceOutput: row.serviceOutput ?? '',
           tags: row.tags ?? '',
         })
       } catch (err) {
@@ -67,19 +76,21 @@ export default function ListAgentPage() {
         if (!cancelled) setLoading(false)
       }
     })()
-    return () => {
-      cancelled = true
-    }
+    return () => { cancelled = true }
   }, [editMode, agentId, form, navigate, message])
 
   const onFinish = async (values: Record<string, unknown>) => {
     setSubmitting(true)
+    const mode = values.deploymentMode as AgentDeploymentMode
     const payload = {
       name: values.name as string,
       description: values.description as string,
       category: values.category as string,
       priceUsdt: String(values.priceUsdt),
-      apiEndpoint: (values.apiEndpoint as string) || undefined,
+      deploymentMode: mode,
+      apiEndpoint: mode === 'EXTERNAL' ? ((values.apiEndpoint as string) || undefined) : undefined,
+      serviceInput: (values.serviceInput as string) || undefined,
+      serviceOutput: (values.serviceOutput as string) || undefined,
       tags: (values.tags as string) || undefined,
     }
     try {
@@ -98,7 +109,6 @@ export default function ListAgentPage() {
     }
   }
 
-  // Cancel from edit: silently re-PUT loaded data so the row flips init -> pending.
   const onCancel = async () => {
     if (!editMode || !original || agentId == null) {
       navigate('/seller/dashboard')
@@ -110,7 +120,10 @@ export default function ListAgentPage() {
         description: original.description,
         category: original.category ?? undefined,
         priceUsdt: original.priceUsdt,
+        deploymentMode: (original.deploymentMode as AgentDeploymentMode) || 'EXTERNAL',
         apiEndpoint: original.apiEndpoint ?? undefined,
+        serviceInput: original.serviceInput ?? undefined,
+        serviceOutput: original.serviceOutput ?? undefined,
         tags: original.tags ?? undefined,
       })
     } catch {
@@ -162,7 +175,12 @@ export default function ListAgentPage() {
       />
 
       <Card style={{ borderRadius: 16 }}>
-        <Form form={form} layout="vertical" onFinish={onFinish}>
+        <Form
+          form={form}
+          layout="vertical"
+          onFinish={onFinish}
+          initialValues={{ deploymentMode: 'EXTERNAL' }}
+        >
           <Form.Item
             name="name"
             label={<Label zh="Agent 名称" en="Agent Name" />}
@@ -173,7 +191,7 @@ export default function ListAgentPage() {
 
           <Form.Item
             name="category"
-            label={<Label zh="分类" en="Category" />}
+            label={<Label zh="分类 / 赛道" en="Category" />}
             rules={[{ required: true }]}
           >
             <Select
@@ -186,6 +204,8 @@ export default function ListAgentPage() {
                 { label: '金融 / Finance', value: 'finance' },
                 { label: '链上 / Web3', value: 'web3' },
                 { label: '创作 / Creative', value: 'creative' },
+                { label: '教育 / Education', value: 'education' },
+                { label: '生产力 / Productivity', value: 'productivity' },
                 { label: '其他 / Other', value: 'other' },
               ]}
             />
@@ -205,6 +225,38 @@ export default function ListAgentPage() {
             }
           >
             <Input.TextArea rows={5} size="large" placeholder="例如：根据用户问题进行三牌阵塔罗解读……" />
+          </Form.Item>
+
+          <Form.Item
+            name="serviceInput"
+            label={<Label zh="服务输入说明" en="Service Input" />}
+            extra={
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                调用方需要传入什么参数或数据 / What inputs does the caller need to provide?
+              </Text>
+            }
+          >
+            <Input.TextArea
+              rows={3}
+              size="large"
+              placeholder="例如：JSON {question: string} — 用户的问题文本"
+            />
+          </Form.Item>
+
+          <Form.Item
+            name="serviceOutput"
+            label={<Label zh="服务输出说明" en="Service Output" />}
+            extra={
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                调用方会收到什么格式的结果 / What does the response look like?
+              </Text>
+            }
+          >
+            <Input.TextArea
+              rows={3}
+              size="large"
+              placeholder="例如：JSON {reading: string, cards: string[]} — 塔罗解读文字和牌面"
+            />
           </Form.Item>
 
           <Form.Item
@@ -232,16 +284,48 @@ export default function ListAgentPage() {
           </Form.Item>
 
           <Form.Item
-            name="apiEndpoint"
-            label={<Label zh="API 调用地址（选填）" en="API Endpoint (optional)" />}
-            extra={
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                你的 Agent 服务地址，demo 阶段可留空 / Your agent service URL; can be empty for demo.
-              </Text>
-            }
+            name="deploymentMode"
+            label={<Label zh="部署模式" en="Deployment Mode" />}
+            rules={[{ required: true }]}
           >
-            <Input size="large" placeholder="https://your-agent.com/api/invoke" />
+            <Radio.Group
+              onChange={e => setDeploymentMode(e.target.value)}
+              size="large"
+            >
+              <Radio.Button value="EXTERNAL">
+                <GlobalOutlined style={{ marginRight: 6 }} />
+                非托管 External URL
+              </Radio.Button>
+              <Radio.Button value="HOSTED" disabled>
+                <CloudServerOutlined style={{ marginRight: 6 }} />
+                平台托管 Hosted <Tag color="purple" style={{ marginLeft: 6, fontSize: 10 }}>敬请期待</Tag>
+              </Radio.Button>
+            </Radio.Group>
           </Form.Item>
+
+          {deploymentMode === 'EXTERNAL' && (
+            <Form.Item
+              name="apiEndpoint"
+              label={<Label zh="外部调用地址" en="External API Endpoint" />}
+              extra={
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  平台将用 POST 调用此地址，遵循 NASP v1 协议 / Platform will POST to this URL per NASP v1 protocol.
+                </Text>
+              }
+            >
+              <Input size="large" placeholder="https://your-agent.com/api/invoke" />
+            </Form.Item>
+          )}
+
+          {deploymentMode === 'HOSTED' && (
+            <Alert
+              type="info"
+              showIcon
+              message="平台托管模式即将上线 / Hosted mode coming soon"
+              description="托管模式下，您将把 Agent 配置上传到 Nicolas 平台运行，无需维护自己的服务器。敬请期待！"
+              style={{ marginBottom: 16 }}
+            />
+          )}
 
           <Form.Item
             name="tags"

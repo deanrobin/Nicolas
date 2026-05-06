@@ -67,8 +67,12 @@ spring:
   # ── 文件上传限制 ──────────────────────────────────────────────────────────
   servlet:
     multipart:
-      max-file-size: 10MB
-      max-request-size: 20MB
+      max-file-size: 52MB
+      max-request-size: 55MB
+
+# ── Skill 文件存储 ────────────────────────────────────────────────────────
+skill:
+  upload-dir: ${SKILL_UPLOAD_DIR:uploads/skills}
 
 # ── Server ────────────────────────────────────────────────────────────────
 server:

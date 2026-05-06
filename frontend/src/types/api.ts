@@ -69,6 +69,8 @@ export interface Merchant {
   updatedAt: string
 }
 
+export type AgentDeploymentMode = 'EXTERNAL' | 'HOSTED'
+
 export interface AgentListing {
   id: number
   merchantId: number
@@ -77,6 +79,9 @@ export interface AgentListing {
   category: string | null
   priceUsdt: string
   apiEndpoint: string | null
+  deploymentMode: AgentDeploymentMode
+  serviceInput: string | null
+  serviceOutput: string | null
   tags: string | null
   status: ReviewStatus
   reviewReason: string | null
@@ -93,6 +98,9 @@ export interface SkillListing {
   category: string | null
   priceUsdt: string
   downloadUrl: string | null
+  filePath: string | null
+  serviceInput: string | null
+  serviceOutput: string | null
   tags: string | null
   status: ReviewStatus
   reviewReason: string | null
@@ -115,6 +123,9 @@ export interface AgentListingRequest {
   category?: string
   priceUsdt: string | number
   apiEndpoint?: string
+  deploymentMode?: AgentDeploymentMode
+  serviceInput?: string
+  serviceOutput?: string
   tags?: string
 }
 
@@ -124,6 +135,9 @@ export interface SkillListingRequest {
   category?: string
   priceUsdt: string | number
   downloadUrl?: string
+  filePath?: string
+  serviceInput?: string
+  serviceOutput?: string
   tags?: string
 }
 

@@ -137,6 +137,23 @@ export default function AgentMarketPage() {
                         {agent.description}
                       </Paragraph>
 
+                      {(agent.serviceInput || agent.serviceOutput) && (
+                        <div style={{ marginBottom: 12, fontSize: 12, background: '#f6f8ff', borderRadius: 8, padding: '8px 10px' }}>
+                          {agent.serviceInput && (
+                            <div style={{ marginBottom: 4 }}>
+                              <Text type="secondary">输入 / Input: </Text>
+                              <Text style={{ fontSize: 12 }}>{agent.serviceInput.slice(0, 80)}{agent.serviceInput.length > 80 ? '…' : ''}</Text>
+                            </div>
+                          )}
+                          {agent.serviceOutput && (
+                            <div>
+                              <Text type="secondary">输出 / Output: </Text>
+                              <Text style={{ fontSize: 12 }}>{agent.serviceOutput.slice(0, 80)}{agent.serviceOutput.length > 80 ? '…' : ''}</Text>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                       {tags.length > 0 && (
                         <div style={{ marginBottom: 12 }}>
                           {tags.map((t) => (

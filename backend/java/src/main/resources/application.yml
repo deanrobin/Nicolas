@@ -74,6 +74,17 @@ spring:
 skill:
   upload-dir: ${SKILL_UPLOAD_DIR:uploads/skills}
 
+# ── 支付与放款（V1 平台钱包托管）──────────────────────────────────────────
+# fee-bps: 平台抽水费率，10000 = 100% （0 = 不抽水，默认）
+# holdback-hours: 买家提交 tx 之后，多少小时后执行放款（24h 用于争议窗口）
+# usdt-decimals: USDT 链上精度（XLayer 上是 6）
+nicolas:
+  payment:
+    fee-bps: ${PAYMENT_FEE_BPS:0}
+    holdback-hours: ${PAYMENT_HOLDBACK_HOURS:24}
+    usdt-decimals: ${USDT_DECIMALS:6}
+    payout-enabled: ${PAYOUT_JOB_ENABLED:true}
+
 # ── Server ────────────────────────────────────────────────────────────────
 server:
   port: ${SERVER_PORT:8080}

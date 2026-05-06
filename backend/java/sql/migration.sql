@@ -200,3 +200,29 @@ CREATE TABLE IF NOT EXISTS payment_orders (
     KEY idx_payment_orders_listing  (listing_id),
     KEY idx_payment_orders_status   (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- [2026-05-06] V007 放款任务表 payout_jobs
+-- 买家提交 tx_hash 后，在 holdback-hours 之后调度放款；
+-- 放款金额 = amount * (10000 - fee_bps) / 10000，剩下的留在平台钱包作为抽水。
+CREATE TABLE IF NOT EXISTS payout_jobs (
+    id                BIGINT        NOT NULL AUTO_INCREMENT,
+    payment_order_id  BIGINT        NOT NULL,
+    merchant_id       BIGINT        NOT NULL,
+    payee_address     VARCHAR(42)   NOT NULL COMMENT '商家收款地址（取自其绑定钱包）',
+    amount_usdt       DECIMAL(18,6) NOT NULL COMMENT '订单总金额',
+    fee_bps           INT           NOT NULL DEFAULT 0 COMMENT '抽水费率 0-10000',
+    payout_amount     DECIMAL(18,6) NOT NULL COMMENT '商家实际到账金额 = amount * (10000-fee_bps)/10000',
+    fee_amount        DECIMAL(18,6) NOT NULL COMMENT '平台抽水金额',
+    scheduled_at      DATETIME      NOT NULL COMMENT '到该时刻才会被 Scheduler 拾取',
+    status            VARCHAR(20)   NOT NULL DEFAULT 'scheduled'
+                      COMMENT 'scheduled | running | done | failed | cancelled',
+    tx_hash           VARCHAR(66)   COMMENT '链上放款 tx hash',
+    error             VARCHAR(500),
+    attempts          INT           NOT NULL DEFAULT 0,
+    created_at        DATETIME      NOT NULL,
+    updated_at        DATETIME      NOT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_payout_jobs_order (payment_order_id),
+    KEY idx_payout_jobs_status_due (status, scheduled_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -160,3 +160,20 @@ ALTER TABLE agent_listings
 ALTER TABLE skill_listings
     MODIFY COLUMN status VARCHAR(20) NOT NULL DEFAULT 'pending'
     COMMENT 'pending | init | approved | rejected | needs_human';
+
+
+-- [2026-05-06] V005 Agent 部署模式 + 服务输入输出 + Skill 文件路径
+-- agent 分为外部调用（EXTERNAL）和平台托管（HOSTED，V1 展示"敬请期待"）。
+-- service_input / service_output 由商家填写，描述 Agent/Skill 的接口约定。
+-- skill 文件实体存服务器，file_path 记相对路径；download_url 保留供外链兼容。
+ALTER TABLE agent_listings
+    ADD COLUMN deployment_mode VARCHAR(16) NOT NULL DEFAULT 'EXTERNAL'
+        COMMENT 'EXTERNAL=商家外部URL; HOSTED=平台托管(V1 coming soon)',
+    ADD COLUMN service_input TEXT COMMENT '服务输入描述',
+    ADD COLUMN service_output TEXT COMMENT '服务输出描述';
+
+ALTER TABLE skill_listings
+    ADD COLUMN file_path VARCHAR(512)
+        COMMENT '服务器存储路径（由平台托管的 Skill 文件）',
+    ADD COLUMN service_input TEXT COMMENT '服务输入描述',
+    ADD COLUMN service_output TEXT COMMENT '服务输出描述';

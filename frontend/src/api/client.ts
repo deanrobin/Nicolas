@@ -153,6 +153,20 @@ export const merchantApi = {
       body: JSON.stringify(req),
     }),
 
+  uploadSkillFile: async (file: File): Promise<string> => {
+    const token = getToken()
+    const form = new FormData()
+    form.append('file', file)
+    const res = await fetch(`${BASE}/merchant/skills/upload`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    })
+    const json: import('../types/api').ApiResponse<{ filePath: string }> = await res.json()
+    if (json.code !== 200) throw new Error(json.message || `Error ${json.code}`)
+    return json.data.filePath
+  },
+
   myListings: () => request<MyListings>('/merchant/listings'),
 }
 

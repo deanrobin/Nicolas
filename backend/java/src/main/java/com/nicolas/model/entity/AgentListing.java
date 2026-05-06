@@ -30,6 +30,15 @@ public class AgentListing {
     @Column(name = "api_endpoint", length = 500)
     private String apiEndpoint;
 
+    @Column(name = "deployment_mode", nullable = false, length = 16)
+    private String deploymentMode = "EXTERNAL";
+
+    @Column(name = "service_input", columnDefinition = "TEXT")
+    private String serviceInput;
+
+    @Column(name = "service_output", columnDefinition = "TEXT")
+    private String serviceOutput;
+
     @Column(length = 255)
     private String tags;
 
@@ -73,6 +82,12 @@ public class AgentListing {
     public void setPriceUsdt(BigDecimal priceUsdt) { this.priceUsdt = priceUsdt; }
     public String getApiEndpoint() { return apiEndpoint; }
     public void setApiEndpoint(String apiEndpoint) { this.apiEndpoint = apiEndpoint; }
+    public String getDeploymentMode() { return deploymentMode; }
+    public void setDeploymentMode(String deploymentMode) { this.deploymentMode = deploymentMode; }
+    public String getServiceInput() { return serviceInput; }
+    public void setServiceInput(String serviceInput) { this.serviceInput = serviceInput; }
+    public String getServiceOutput() { return serviceOutput; }
+    public void setServiceOutput(String serviceOutput) { this.serviceOutput = serviceOutput; }
     public String getTags() { return tags; }
     public void setTags(String tags) { this.tags = tags; }
     public String getStatus() { return status; }

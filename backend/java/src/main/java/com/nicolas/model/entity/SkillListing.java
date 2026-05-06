@@ -30,6 +30,15 @@ public class SkillListing {
     @Column(name = "download_url", length = 500)
     private String downloadUrl;
 
+    @Column(name = "file_path", length = 512)
+    private String filePath;
+
+    @Column(name = "service_input", columnDefinition = "TEXT")
+    private String serviceInput;
+
+    @Column(name = "service_output", columnDefinition = "TEXT")
+    private String serviceOutput;
+
     @Column(length = 255)
     private String tags;
 
@@ -73,6 +82,12 @@ public class SkillListing {
     public void setPriceUsdt(BigDecimal priceUsdt) { this.priceUsdt = priceUsdt; }
     public String getDownloadUrl() { return downloadUrl; }
     public void setDownloadUrl(String downloadUrl) { this.downloadUrl = downloadUrl; }
+    public String getFilePath() { return filePath; }
+    public void setFilePath(String filePath) { this.filePath = filePath; }
+    public String getServiceInput() { return serviceInput; }
+    public void setServiceInput(String serviceInput) { this.serviceInput = serviceInput; }
+    public String getServiceOutput() { return serviceOutput; }
+    public void setServiceOutput(String serviceOutput) { this.serviceOutput = serviceOutput; }
     public String getTags() { return tags; }
     public void setTags(String tags) { this.tags = tags; }
     public String getStatus() { return status; }

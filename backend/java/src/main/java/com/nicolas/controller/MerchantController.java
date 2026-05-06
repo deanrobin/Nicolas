@@ -5,10 +5,13 @@ import com.nicolas.model.entity.AgentListing;
 import com.nicolas.model.entity.Merchant;
 import com.nicolas.model.entity.SkillListing;
 import com.nicolas.service.MerchantService;
+import com.nicolas.service.SkillFileService;
 import jakarta.validation.Valid;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.Map;
@@ -18,9 +21,11 @@ import java.util.Map;
 public class MerchantController {
 
     private final MerchantService service;
+    private final SkillFileService skillFileService;
 
-    public MerchantController(MerchantService service) {
+    public MerchantController(MerchantService service, SkillFileService skillFileService) {
         this.service = service;
+        this.skillFileService = skillFileService;
     }
 
     /** 注册商家（默认 status = pending） */
@@ -75,6 +80,15 @@ public class MerchantController {
             @PathVariable Long id,
             @Valid @RequestBody AgentListingRequest req) {
         return ResponseEntity.ok(ApiResponse.ok(service.resubmitAgent(userId, id, req)));
+    }
+
+    /** 上传 Skill 文件到服务器，返回 filePath（上架时写入 SkillListingRequest.filePath） */
+    @PostMapping(value = "/skills/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ApiResponse<Map<String, String>>> uploadSkillFile(
+            @AuthenticationPrincipal Long userId,
+            @RequestParam("file") MultipartFile file) {
+        String path = skillFileService.store(userId, file);
+        return ResponseEntity.ok(ApiResponse.ok(Map.of("filePath", path)));
     }
 
     /** 上架 Skill */

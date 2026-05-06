@@ -24,6 +24,15 @@ public class SkillListingRequest {
     @Size(max = 500)
     private String downloadUrl;
 
+    @Size(max = 512)
+    private String filePath;
+
+    @Size(max = 2000)
+    private String serviceInput;
+
+    @Size(max = 2000)
+    private String serviceOutput;
+
     @Size(max = 255)
     private String tags;
 
@@ -37,6 +46,12 @@ public class SkillListingRequest {
     public void setPriceUsdt(BigDecimal priceUsdt) { this.priceUsdt = priceUsdt; }
     public String getDownloadUrl() { return downloadUrl; }
     public void setDownloadUrl(String downloadUrl) { this.downloadUrl = downloadUrl; }
+    public String getFilePath() { return filePath; }
+    public void setFilePath(String filePath) { this.filePath = filePath; }
+    public String getServiceInput() { return serviceInput; }
+    public void setServiceInput(String serviceInput) { this.serviceInput = serviceInput; }
+    public String getServiceOutput() { return serviceOutput; }
+    public void setServiceOutput(String serviceOutput) { this.serviceOutput = serviceOutput; }
     public String getTags() { return tags; }
     public void setTags(String tags) { this.tags = tags; }
 }

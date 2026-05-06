@@ -36,14 +36,18 @@ def fetch_pending(
     table: str,
     limit: int = 10,
 ) -> list[dict[str, Any]]:
-    """Return up to `limit` rows with status='pending', oldest first."""
+    """Return up to `limit` rows with status='pending', oldest first.
+    Injects a '_table' key so prechecks can apply table-specific rules."""
     with conn.cursor() as cur:
         cur.execute(
             f"SELECT * FROM {table} WHERE status = 'pending' "
             f"ORDER BY created_at ASC LIMIT %s",
             (limit,),
         )
-        return list(cur.fetchall())
+        rows = list(cur.fetchall())
+    for row in rows:
+        row["_table"] = table
+    return rows
 
 
 def update_status(

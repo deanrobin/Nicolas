@@ -24,6 +24,15 @@ public class AgentListingRequest {
     @Size(max = 500)
     private String apiEndpoint;
 
+    @Size(max = 16)
+    private String deploymentMode = "EXTERNAL";
+
+    @Size(max = 2000)
+    private String serviceInput;
+
+    @Size(max = 2000)
+    private String serviceOutput;
+
     @Size(max = 255)
     private String tags;
 
@@ -37,6 +46,12 @@ public class AgentListingRequest {
     public void setPriceUsdt(BigDecimal priceUsdt) { this.priceUsdt = priceUsdt; }
     public String getApiEndpoint() { return apiEndpoint; }
     public void setApiEndpoint(String apiEndpoint) { this.apiEndpoint = apiEndpoint; }
+    public String getDeploymentMode() { return deploymentMode; }
+    public void setDeploymentMode(String deploymentMode) { this.deploymentMode = deploymentMode; }
+    public String getServiceInput() { return serviceInput; }
+    public void setServiceInput(String serviceInput) { this.serviceInput = serviceInput; }
+    public String getServiceOutput() { return serviceOutput; }
+    public void setServiceOutput(String serviceOutput) { this.serviceOutput = serviceOutput; }
     public String getTags() { return tags; }
     public void setTags(String tags) { this.tags = tags; }
 }

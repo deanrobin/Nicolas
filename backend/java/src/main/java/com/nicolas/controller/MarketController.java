@@ -2,10 +2,10 @@ package com.nicolas.controller;
 
 import com.nicolas.config.ChainConfig;
 import com.nicolas.config.PaymentConfig;
+import com.nicolas.model.dto.AgentListingView;
 import com.nicolas.model.dto.ApiResponse;
-import com.nicolas.model.entity.AgentListing;
+import com.nicolas.model.dto.SkillListingView;
 import com.nicolas.model.entity.PaymentOrder;
-import com.nicolas.model.entity.SkillListing;
 import com.nicolas.repository.AgentListingRepository;
 import com.nicolas.repository.SkillListingRepository;
 import com.nicolas.service.PaymentService;
@@ -40,13 +40,17 @@ public class MarketController {
     }
 
     @GetMapping("/agents")
-    public ResponseEntity<ApiResponse<List<AgentListing>>> agents() {
-        return ResponseEntity.ok(ApiResponse.ok(agentRepo.findByStatusOrderByCreatedAtDesc("approved")));
+    public ResponseEntity<ApiResponse<List<AgentListingView>>> agents() {
+        List<AgentListingView> data = agentRepo.findByStatusOrderByCreatedAtDesc("approved")
+                .stream().map(AgentListingView::from).toList();
+        return ResponseEntity.ok(ApiResponse.ok(data));
     }
 
     @GetMapping("/skills")
-    public ResponseEntity<ApiResponse<List<SkillListing>>> skills() {
-        return ResponseEntity.ok(ApiResponse.ok(skillRepo.findByStatusOrderByCreatedAtDesc("approved")));
+    public ResponseEntity<ApiResponse<List<SkillListingView>>> skills() {
+        List<SkillListingView> data = skillRepo.findByStatusOrderByCreatedAtDesc("approved")
+                .stream().map(SkillListingView::from).toList();
+        return ResponseEntity.ok(ApiResponse.ok(data));
     }
 
     /** Create a buy order for a skill. Returns order + payment instructions. */

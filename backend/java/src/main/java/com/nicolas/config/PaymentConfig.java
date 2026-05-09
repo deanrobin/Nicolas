@@ -19,6 +19,9 @@ public class PaymentConfig {
     /** Master switch for the payout scheduler. */
     private boolean payoutEnabled = true;
 
+    /** Block confirmations required before a buyer payment is marked 'paid'. */
+    private int confirmationBlocks = 3;
+
     public int getFeeBps() { return feeBps; }
     public void setFeeBps(int feeBps) { this.feeBps = feeBps; }
     public int getHoldbackHours() { return holdbackHours; }
@@ -27,4 +30,6 @@ public class PaymentConfig {
     public void setUsdtDecimals(int usdtDecimals) { this.usdtDecimals = usdtDecimals; }
     public boolean isPayoutEnabled() { return payoutEnabled; }
     public void setPayoutEnabled(boolean payoutEnabled) { this.payoutEnabled = payoutEnabled; }
+    public int getConfirmationBlocks() { return confirmationBlocks; }
+    public void setConfirmationBlocks(int confirmationBlocks) { this.confirmationBlocks = confirmationBlocks; }
 }

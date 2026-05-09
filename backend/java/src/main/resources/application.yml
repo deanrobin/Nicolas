@@ -86,6 +86,7 @@ nicolas:
     holdback-hours: ${PAYMENT_HOLDBACK_HOURS:24}
     usdt-decimals: ${USDT_DECIMALS:6}
     payout-enabled: ${PAYOUT_JOB_ENABLED:true}
+    confirmation-blocks: ${PAYMENT_CONFIRMATION_BLOCKS:3}
   audit:
     name:
       min-length: 2

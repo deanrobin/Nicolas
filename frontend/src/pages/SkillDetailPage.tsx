@@ -9,6 +9,8 @@ import {
   Space,
   Result,
   Empty,
+  Input,
+  Alert,
 } from 'antd'
 import {
   ArrowLeftOutlined,
@@ -17,6 +19,7 @@ import {
   CloseCircleOutlined,
   LinkOutlined,
   FileTextOutlined,
+  SendOutlined,
 } from '@ant-design/icons'
 import { App as AntApp } from 'antd'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -24,6 +27,12 @@ import { marketApi } from '../api/client'
 import type { OrderStatus, PaymentOrder, SkillListing } from '../types/api'
 
 const { Title, Text, Paragraph } = Typography
+
+function paymentConfirmationsHint(s: OrderStatus): string {
+  if (s === 'confirming') return 'on-chain confirmations'
+  if (s === 'paid') return 'final delivery'
+  return 'next step'
+}
 
 const STATUS_META: Record<OrderStatus, { color: string; icon: React.ReactNode; label: string }> = {
   pending_payment: { color: 'orange', icon: <ClockCircleOutlined />, label: 'Pending payment' },
@@ -43,40 +52,62 @@ export default function SkillDetailPage() {
   const [order, setOrder] = useState<PaymentOrder | null>(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
+  const [txInput, setTxInput] = useState('')
+  const [submittingTx, setSubmittingTx] = useState(false)
 
-  useEffect(() => {
+  const reload = async () => {
     if (!Number.isFinite(skillId)) {
       setNotFound(true)
       setLoading(false)
       return
     }
+    setLoading(true)
+    try {
+      const [s, orders] = await Promise.all([
+        marketApi.skill(skillId),
+        marketApi.myOrders().catch(() => [] as PaymentOrder[]),
+      ])
+      setSkill(s)
+      const mine = orders
+        .filter((o) => o.orderType === 'SKILL' && o.listingId === skillId && o.status !== 'refunded')
+        .sort((a, b) => b.id - a.id)
+      setOrder(mine[0] ?? null)
+    } catch (err) {
+      setNotFound(true)
+      message.error(err instanceof Error ? err.message : 'Failed to load skill')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
     let cancelled = false
-    ;(async () => {
-      setLoading(true)
-      try {
-        const [s, orders] = await Promise.all([
-          marketApi.skill(skillId),
-          marketApi.myOrders().catch(() => [] as PaymentOrder[]),
-        ])
-        if (cancelled) return
-        setSkill(s)
-        const mine = orders
-          .filter((o) => o.orderType === 'SKILL' && o.listingId === skillId && o.status !== 'refunded')
-          .sort((a, b) => b.id - a.id)
-        setOrder(mine[0] ?? null)
-      } catch (err) {
-        if (!cancelled) {
-          setNotFound(true)
-          message.error(err instanceof Error ? err.message : 'Failed to load skill')
-        }
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    })()
+    void (async () => { if (!cancelled) await reload() })()
     return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [skillId])
 
   const goBack = () => navigate('/market/skills')
+
+  const handleSubmitTx = async () => {
+    if (!order) return
+    const hash = txInput.trim()
+    if (!/^0x[0-9a-fA-F]{64}$/.test(hash)) {
+      message.error('Invalid tx hash — must be 0x-prefixed 32-byte hex')
+      return
+    }
+    setSubmittingTx(true)
+    try {
+      await marketApi.submitTx(order.id, hash)
+      message.success('Tx hash submitted — waiting for on-chain confirmation')
+      setTxInput('')
+      await reload()
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : 'Failed to submit tx hash')
+    } finally {
+      setSubmittingTx(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -201,9 +232,36 @@ export default function SkillDetailPage() {
                     <Empty description="No deliverable attached yet" />
                   )}
                 </div>
+              ) : order.status === 'pending_payment' ? (
+                <div style={{ marginTop: 16 }}>
+                  <Alert
+                    type="warning"
+                    showIcon
+                    style={{ marginBottom: 12 }}
+                    message="No tx hash on record"
+                    description="If you already paid USDT but the modal closed before submitting the tx hash, paste it here. The system will verify it on chain (≈ 3 confirmations) and unlock the download."
+                  />
+                  <Space.Compact style={{ width: '100%' }}>
+                    <Input
+                      placeholder="0x… 32-byte tx hash"
+                      value={txInput}
+                      onChange={(e) => setTxInput(e.target.value)}
+                      disabled={submittingTx}
+                    />
+                    <Button
+                      type="primary"
+                      icon={<SendOutlined />}
+                      loading={submittingTx}
+                      onClick={handleSubmitTx}
+                      style={{ background: '#fa8c16', borderColor: '#fa8c16' }}
+                    >
+                      Submit
+                    </Button>
+                  </Space.Compact>
+                </div>
               ) : (
                 <Paragraph type="secondary" style={{ marginTop: 16, marginBottom: 0 }}>
-                  Deliverable will appear here once payment is confirmed on chain.
+                  Waiting for {paymentConfirmationsHint(order.status)} — the deliverable will appear here automatically.
                 </Paragraph>
               )}
             </Card>

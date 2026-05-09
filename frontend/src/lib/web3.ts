@@ -11,9 +11,14 @@ function padLeft(hex: string, length: number): string {
   return clean.padStart(length, '0')
 }
 
-/** Convert decimal amount string like "0.5" to BigInt raw units. */
-export function toUnits(amount: string, decimals: number): bigint {
-  const [whole = '0', fracRaw = ''] = amount.split('.')
+/**
+ * Convert a decimal amount to BigInt raw units. Accepts string or number so a
+ * stray `BigDecimal` serialized as a JSON number from the backend doesn't crash
+ * us with `amount.split is not a function`.
+ */
+export function toUnits(amount: string | number, decimals: number): bigint {
+  const s = typeof amount === 'string' ? amount : String(amount)
+  const [whole = '0', fracRaw = ''] = s.split('.')
   const frac = (fracRaw + '0'.repeat(decimals)).slice(0, decimals)
   return BigInt(whole) * 10n ** BigInt(decimals) + BigInt(frac || 0)
 }

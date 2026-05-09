@@ -2,7 +2,6 @@ package com.nicolas.model.dto;
 
 import com.nicolas.model.entity.AgentListing;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
@@ -10,6 +9,11 @@ import java.time.LocalDateTime;
  * JPA entities can carry Hibernate bytecode-enhanced state that is
  * unsafe to feed straight into the JSON converter; the record below
  * is a plain Java carrier so serialization is deterministic.
+ *
+ * <p>{@code priceUsdt} is a {@code String} (BigDecimal.toPlainString) so the
+ * wire shape matches the frontend's {@code priceUsdt: string} declaration —
+ * FastJSON 2 would otherwise emit it as a JSON number and break code that
+ * treats it as a string.
  */
 public record AgentListingView(
         Long id,
@@ -17,7 +21,7 @@ public record AgentListingView(
         String name,
         String description,
         String category,
-        BigDecimal priceUsdt,
+        String priceUsdt,
         String apiEndpoint,
         String deploymentMode,
         String serviceInput,
@@ -36,7 +40,7 @@ public record AgentListingView(
                 e.getName(),
                 e.getDescription(),
                 e.getCategory(),
-                e.getPriceUsdt(),
+                e.getPriceUsdt() == null ? null : e.getPriceUsdt().toPlainString(),
                 e.getApiEndpoint(),
                 e.getDeploymentMode(),
                 e.getServiceInput(),

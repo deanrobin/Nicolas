@@ -2,7 +2,6 @@ package com.nicolas.model.dto;
 
 import com.nicolas.model.entity.SkillListing;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 public record SkillListingView(
@@ -11,7 +10,7 @@ public record SkillListingView(
         String name,
         String description,
         String category,
-        BigDecimal priceUsdt,
+        String priceUsdt,
         String downloadUrl,
         String filePath,
         String serviceInput,
@@ -30,7 +29,7 @@ public record SkillListingView(
                 e.getName(),
                 e.getDescription(),
                 e.getCategory(),
-                e.getPriceUsdt(),
+                e.getPriceUsdt() == null ? null : e.getPriceUsdt().toPlainString(),
                 e.getDownloadUrl(),
                 e.getFilePath(),
                 e.getServiceInput(),

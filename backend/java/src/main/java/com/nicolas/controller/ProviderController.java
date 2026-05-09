@@ -2,10 +2,10 @@ package com.nicolas.controller;
 
 import com.alibaba.fastjson2.JSONObject;
 import com.nicolas.config.ChainConfig;
+import com.nicolas.model.dto.AgentListingView;
 import com.nicolas.model.dto.ApiResponse;
-import com.nicolas.model.entity.AgentListing;
-import com.nicolas.model.entity.Merchant;
-import com.nicolas.model.entity.SkillListing;
+import com.nicolas.model.dto.MerchantView;
+import com.nicolas.model.dto.SkillListingView;
 import com.nicolas.repository.AgentListingRepository;
 import com.nicolas.repository.MerchantRepository;
 import com.nicolas.repository.SkillListingRepository;
@@ -153,18 +153,21 @@ public class ProviderController {
     // ── Review queue (pending + needs_human) ─────────────────────────────
 
     @GetMapping("/review/merchants")
-    public ResponseEntity<ApiResponse<java.util.List<Merchant>>> reviewMerchants() {
-        return ResponseEntity.ok(ApiResponse.ok(merchantService.getReviewQueueMerchants()));
+    public ResponseEntity<ApiResponse<java.util.List<MerchantView>>> reviewMerchants() {
+        return ResponseEntity.ok(ApiResponse.ok(
+                merchantService.getReviewQueueMerchants().stream().map(MerchantView::from).toList()));
     }
 
     @GetMapping("/review/agents")
-    public ResponseEntity<ApiResponse<java.util.List<AgentListing>>> reviewAgents() {
-        return ResponseEntity.ok(ApiResponse.ok(merchantService.getReviewQueueAgents()));
+    public ResponseEntity<ApiResponse<java.util.List<AgentListingView>>> reviewAgents() {
+        return ResponseEntity.ok(ApiResponse.ok(
+                merchantService.getReviewQueueAgents().stream().map(AgentListingView::from).toList()));
     }
 
     @GetMapping("/review/skills")
-    public ResponseEntity<ApiResponse<java.util.List<SkillListing>>> reviewSkills() {
-        return ResponseEntity.ok(ApiResponse.ok(merchantService.getReviewQueueSkills()));
+    public ResponseEntity<ApiResponse<java.util.List<SkillListingView>>> reviewSkills() {
+        return ResponseEntity.ok(ApiResponse.ok(
+                merchantService.getReviewQueueSkills().stream().map(SkillListingView::from).toList()));
     }
 
     // ── Approve / Reject ─────────────────────────────────────────────────
@@ -172,35 +175,38 @@ public class ProviderController {
     public record ReviewDecision(String reason) {}
 
     @PostMapping("/merchants/{id}/approve")
-    public ResponseEntity<ApiResponse<Merchant>> approveMerchant(@PathVariable Long id) {
-        return ResponseEntity.ok(ApiResponse.ok(merchantService.approveMerchant(id)));
+    public ResponseEntity<ApiResponse<MerchantView>> approveMerchant(@PathVariable Long id) {
+        return ResponseEntity.ok(ApiResponse.ok(MerchantView.from(merchantService.approveMerchant(id))));
     }
 
     @PostMapping("/merchants/{id}/reject")
-    public ResponseEntity<ApiResponse<Merchant>> rejectMerchant(
+    public ResponseEntity<ApiResponse<MerchantView>> rejectMerchant(
             @PathVariable Long id, @RequestBody ReviewDecision body) {
-        return ResponseEntity.ok(ApiResponse.ok(merchantService.rejectMerchant(id, body.reason())));
+        return ResponseEntity.ok(ApiResponse.ok(
+                MerchantView.from(merchantService.rejectMerchant(id, body.reason()))));
     }
 
     @PostMapping("/listings/agents/{id}/approve")
-    public ResponseEntity<ApiResponse<AgentListing>> approveAgent(@PathVariable Long id) {
-        return ResponseEntity.ok(ApiResponse.ok(merchantService.approveAgent(id)));
+    public ResponseEntity<ApiResponse<AgentListingView>> approveAgent(@PathVariable Long id) {
+        return ResponseEntity.ok(ApiResponse.ok(AgentListingView.from(merchantService.approveAgent(id))));
     }
 
     @PostMapping("/listings/agents/{id}/reject")
-    public ResponseEntity<ApiResponse<AgentListing>> rejectAgent(
+    public ResponseEntity<ApiResponse<AgentListingView>> rejectAgent(
             @PathVariable Long id, @RequestBody ReviewDecision body) {
-        return ResponseEntity.ok(ApiResponse.ok(merchantService.rejectAgent(id, body.reason())));
+        return ResponseEntity.ok(ApiResponse.ok(
+                AgentListingView.from(merchantService.rejectAgent(id, body.reason()))));
     }
 
     @PostMapping("/listings/skills/{id}/approve")
-    public ResponseEntity<ApiResponse<SkillListing>> approveSkill(@PathVariable Long id) {
-        return ResponseEntity.ok(ApiResponse.ok(merchantService.approveSkill(id)));
+    public ResponseEntity<ApiResponse<SkillListingView>> approveSkill(@PathVariable Long id) {
+        return ResponseEntity.ok(ApiResponse.ok(SkillListingView.from(merchantService.approveSkill(id))));
     }
 
     @PostMapping("/listings/skills/{id}/reject")
-    public ResponseEntity<ApiResponse<SkillListing>> rejectSkill(
+    public ResponseEntity<ApiResponse<SkillListingView>> rejectSkill(
             @PathVariable Long id, @RequestBody ReviewDecision body) {
-        return ResponseEntity.ok(ApiResponse.ok(merchantService.rejectSkill(id, body.reason())));
+        return ResponseEntity.ok(ApiResponse.ok(
+                SkillListingView.from(merchantService.rejectSkill(id, body.reason()))));
     }
 }

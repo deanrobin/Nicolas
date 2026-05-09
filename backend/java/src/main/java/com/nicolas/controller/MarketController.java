@@ -80,13 +80,24 @@ public class MarketController {
     public ResponseEntity<ApiResponse<Map<String, Object>>> buySkill(
             @AuthenticationPrincipal Long userId,
             @PathVariable Long id) {
-        PaymentOrder order = paymentService.createSkillOrder(userId, id);
+        return ResponseEntity.ok(ApiResponse.ok(buyResponse(paymentService.createSkillOrder(userId, id))));
+    }
+
+    /** Create a pay-per-call order for an agent. Same manual-pay flow as skills. */
+    @PostMapping("/agents/{id}/buy")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> buyAgent(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long id) {
+        return ResponseEntity.ok(ApiResponse.ok(buyResponse(paymentService.createAgentOrder(userId, id))));
+    }
+
+    private Map<String, Object> buyResponse(PaymentOrder order) {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("order", PaymentOrderView.from(order));
         data.put("usdtAddress", chainConfig.getUsdtAddress());
         data.put("chainId", chainConfig.getChainId());
         data.put("usdtDecimals", paymentConfig.getUsdtDecimals());
-        return ResponseEntity.ok(ApiResponse.ok(data));
+        return data;
     }
 
     public record SubmitTxRequest(String txHash) {}

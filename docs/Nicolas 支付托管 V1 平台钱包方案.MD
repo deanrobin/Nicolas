@@ -187,3 +187,84 @@ payout_confirm_job 确认链上交易，订单进入 COMPLETED / REFUNDED / PART
 - ❌ 不要求链上 `markDelivered / confirmDelivery / resolveDispute`
 - ❌ 不要求完整 event indexer；V1 只需要钱包入账扫描 / tx 校验和放款确认扫描
 - ❌ 不要求合约审计、verify、升级代理和复杂的链上权限体系
+
+
+---
+
+## 12. V1 买家支付路径 — 手动转账，不唤起 dApp
+
+> 2026-05-09 修订。Skill 与 Agent 同一套流程。
+
+### 12.1 决策
+
+V1 不再使用 `eth_sendTransaction` / `wallet_sendTransaction` 路径唤起钱包发送 USDT。
+理由：
+
+- XLayer 上的 "USDT 免 gas" 仅在 OKX Wallet 自己的 Send UI 内（走 paymaster）才生效；
+  从 dApp 唤起的标准 EIP‑1193 调用走的是普通合约调用通道，钱包必收 OKB gas，
+  与平台对外宣传的"USDT 免 gas"体验冲突
+- 让买家自己在钱包里发起转账，可以使用 OKX Wallet 自带的 USDT‑only / paymaster 通道，
+  平台不承担 OKB 成本，OKX 自家 paymaster 直接把成本以 USDT 形式转嫁给买家钱包
+- 平台后端只需要做"入账校验 + 防滥用"，工程量小、合约耦合低
+
+### 12.2 流程（适用于 Skill 一次买断 *和* Agent 按次付费）
+
+```
+Buyer 点 Buy
+        │
+        ▼
+POST /market/{skills|agents}/{id}/buy
+        │  → 服务端 createSkillOrder / createAgentOrder
+        │     · 必须先绑定钱包（user_wallets）；未绑定直接 400
+        │     · 查重：同 (buyer_id, listing_id, order_type) 已有非终止订单 → 409
+        │     · 落库 buyer_wallet_address 快照（确认时回比对）
+        │     · status = pending_payment
+        │  ← 返回 { order, usdtAddress, chainId, usdtDecimals }
+        │
+        ▼
+前端弹 ManualPayModal（仅展示，不唤起钱包）：
+  · amount / 平台收款地址 / USDT 合约地址 / chainId — 都带 copy 按钮
+  · 提示"on-chain from 必须等于你绑定的钱包"
+  · 一个 tx hash 输入框 + Submit
+        │
+Buyer 在自己钱包（建议 OKX Wallet）里发 USDT → 平台钱包
+        │
+        ▼
+Buyer 把 tx hash 贴回输入框 → POST /market/orders/{id}/submit-tx
+        │  → 服务端 submitTxHash
+        │     · 校验 ^0x[0-9a-f]{64}$
+        │     · findByTxHash 预查重 → 409；DB 同时有 UNIQUE(tx_hash) 兜底
+        │     · status = confirming
+        │
+        ▼
+PaymentConfirmationJob（每 30s 一轮）
+        │  · receipt.status != 0x1 → 回滚到 pending_payment（清 tx_hash）
+        │  · confirmations < confirmation-blocks（默认 3）→ 留在 confirming
+        │  · 没有 USDT.Transfer 到 platformWallet → 留在 confirming + 警告日志
+        │  · 金额不足 → 留在 confirming + 警告日志
+        │  · receipt.from != order.buyer_wallet_address → 留在 confirming + 警告日志
+        │  · 全部通过 → 抓 tx body 取 nonce；落 tx_from_address + tx_nonce
+        │              → status = paid
+        │
+        ▼
+PayoutJobScheduler（holdback 到点；status 必须 == paid 才放款）
+        │  · 仍处于 confirming → 推迟 +5min 重试
+        │  · 已回滚 / refunded → 取消 payout job
+        │  · paid → 调 operator 钱包转 USDT → status = delivered
+```
+
+### 12.3 反滥用约束
+
+| 约束 | 实现位置 | 目的 |
+|---|---|---|
+| `buyer_wallet_address` 在下单时快照 | `PaymentService.createOrder` | 锁定确认时 from 地址的比对基准 |
+| `receipt.from == buyer_wallet_address` | `PaymentConfirmationJob` | 防止陌生人贴别人的 tx hash 来"白嫖" |
+| `tx_hash` 全局唯一（DB UNIQUE + 服务端预查） | `payment_orders.tx_hash` UNIQUE + `findByTxHash` | 防止同一笔被多个订单复用 |
+| `tx_nonce` / `tx_from_address` 落库 | `PaymentConfirmationJob` | 审计；事后可重放对账 |
+| 必须先绑定钱包才允许下单 | `PaymentService.createOrder` | 没有比对基准就没有第二条防线 |
+
+### 12.4 前端文案
+
+- Buy 按钮 → 弹窗标题: "Pay with your wallet · 手动转账"
+- 副标题: "Open OKX Wallet (or any wallet on X Layer), send USDT to the address below, then paste the tx hash here."
+- 提示: "Nicolas does NOT auto-trigger your wallet — this avoids the dApp gas-fee path so you can use the wallet's built-in USDT-only flow if it provides one."

@@ -10,6 +10,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.web3j.protocol.core.methods.response.Transaction;
 import org.web3j.protocol.core.methods.response.TransactionReceipt;
 
 import java.math.BigInteger;
@@ -111,9 +112,28 @@ public class PaymentConfirmationJob {
             return;
         }
 
+        // The manual-pay flow's central guard: the on-chain `from` MUST match
+        // the wallet the buyer had bound at order-creation time, otherwise a
+        // stranger could claim a free skill by pasting somebody else's tx hash.
+        String txFrom = receipt.getFrom();
+        if (StringUtils.hasText(order.getBuyerWalletAddress())
+                && !ChainQueryService.sameAddress(txFrom, order.getBuyerWalletAddress())) {
+            log.warn("Order {} tx {} from-address mismatch: tx.from={}, expected buyer wallet={} — leaving in confirming",
+                    order.getId(), order.getTxHash(), txFrom, order.getBuyerWalletAddress());
+            return;
+        }
+
+        // Capture from + nonce for audit. Receipt has `from`; nonce lives on
+        // the tx body, so one extra eth_getTransactionByHash call.
+        order.setTxFromAddress(txFrom);
+        Transaction txBody = chain.getTransaction(order.getTxHash()).orElse(null);
+        if (txBody != null && txBody.getNonce() != null) {
+            order.setTxNonce(txBody.getNonce().longValueExact());
+        }
+
         order.setStatus("paid");
         orderRepo.save(order);
-        log.info("Order {} confirmed at block {} ({} confirmations) — marked paid",
-                order.getId(), txBlock, confirmations);
+        log.info("Order {} confirmed at block {} ({} confirmations) — marked paid (from={}, nonce={})",
+                order.getId(), txBlock, confirmations, txFrom, order.getTxNonce());
     }
 }

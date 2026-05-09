@@ -20,7 +20,10 @@ public record PaymentOrderView(
         String amountUsdt,
         String status,
         String platformWalletAddress,
+        String buyerWalletAddress,
         String txHash,
+        String txFromAddress,
+        Long txNonce,
         String note,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
@@ -35,7 +38,10 @@ public record PaymentOrderView(
                 o.getAmountUsdt() == null ? null : o.getAmountUsdt().toPlainString(),
                 o.getStatus(),
                 o.getPlatformWalletAddress(),
+                o.getBuyerWalletAddress(),
                 o.getTxHash(),
+                o.getTxFromAddress(),
+                o.getTxNonce(),
                 o.getNote(),
                 o.getCreatedAt(),
                 o.getUpdatedAt()

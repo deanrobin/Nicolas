@@ -33,8 +33,20 @@ public class PaymentOrder {
     @Column(name = "platform_wallet_address", nullable = false, length = 42)
     private String platformWalletAddress;
 
-    @Column(name = "tx_hash", length = 66)
+    /** Snapshot of the buyer's bound wallet at order-creation time. */
+    @Column(name = "buyer_wallet_address", length = 42)
+    private String buyerWalletAddress;
+
+    @Column(name = "tx_hash", length = 66, unique = true)
     private String txHash;
+
+    /** {@code from} captured from the on-chain receipt during confirmation. */
+    @Column(name = "tx_from_address", length = 42)
+    private String txFromAddress;
+
+    /** {@code nonce} captured from the on-chain tx body during confirmation. */
+    @Column(name = "tx_nonce")
+    private Long txNonce;
 
     @Column(length = 500)
     private String note;
@@ -71,8 +83,14 @@ public class PaymentOrder {
     public void setStatus(String status) { this.status = status; }
     public String getPlatformWalletAddress() { return platformWalletAddress; }
     public void setPlatformWalletAddress(String platformWalletAddress) { this.platformWalletAddress = platformWalletAddress; }
+    public String getBuyerWalletAddress() { return buyerWalletAddress; }
+    public void setBuyerWalletAddress(String buyerWalletAddress) { this.buyerWalletAddress = buyerWalletAddress; }
     public String getTxHash() { return txHash; }
     public void setTxHash(String txHash) { this.txHash = txHash; }
+    public String getTxFromAddress() { return txFromAddress; }
+    public void setTxFromAddress(String txFromAddress) { this.txFromAddress = txFromAddress; }
+    public Long getTxNonce() { return txNonce; }
+    public void setTxNonce(Long txNonce) { this.txNonce = txNonce; }
     public String getNote() { return note; }
     public void setNote(String note) { this.note = note; }
     public LocalDateTime getCreatedAt() { return createdAt; }

@@ -18,6 +18,7 @@ import org.web3j.protocol.core.methods.response.EthBlockNumber;
 import org.web3j.protocol.core.methods.response.EthCall;
 import org.web3j.protocol.core.methods.response.EthGetBalance;
 import org.web3j.protocol.core.methods.response.EthGetTransactionReceipt;
+import org.web3j.protocol.core.methods.response.EthTransaction;
 import org.web3j.protocol.core.methods.response.Log;
 import org.web3j.protocol.core.methods.response.TransactionReceipt;
 import org.web3j.utils.Numeric;
@@ -91,6 +92,13 @@ public class ChainQueryService {
         EthGetTransactionReceipt r = web3j.ethGetTransactionReceipt(txHash).send();
         if (r.hasError()) throw new IllegalStateException(r.getError().getMessage());
         return r.getTransactionReceipt();
+    }
+
+    /** Transaction body for a tx hash — needed for {@code from} and {@code nonce}. */
+    public Optional<org.web3j.protocol.core.methods.response.Transaction> getTransaction(String txHash) throws Exception {
+        EthTransaction r = web3j.ethGetTransactionByHash(txHash).send();
+        if (r.hasError()) throw new IllegalStateException(r.getError().getMessage());
+        return r.getTransaction();
     }
 
     /**
@@ -207,7 +215,7 @@ public class ChainQueryService {
         return "0x" + hex.substring(hex.length() - 40);
     }
 
-    private static boolean sameAddress(String a, String b) {
+    public static boolean sameAddress(String a, String b) {
         if (a == null || b == null) return false;
         String aa = a.startsWith("0x") ? a.substring(2) : a;
         String bb = b.startsWith("0x") ? b.substring(2) : b;

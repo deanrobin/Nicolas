@@ -136,6 +136,16 @@ public class ProviderController {
         )));
     }
 
+    /**
+     * Probe whether the configured USDT contract supports ERC-2612 {@code permit}.
+     * Used to decide if we can build a gas-less buy flow where buyers sign a
+     * {@code permit} and the operator wallet pays gas to call {@code transferFrom}.
+     */
+    @GetMapping("/chain/usdt-permit-support")
+    public ResponseEntity<ApiResponse<ChainQueryService.PermitProbe>> usdtPermitSupport() {
+        return ResponseEntity.ok(ApiResponse.ok(chain.probeUsdtPermitSupport()));
+    }
+
     // ── OnchainOS proxy ──────────────────────────────────────────────────
 
     public record BroadcastReq(String signedTx) {}

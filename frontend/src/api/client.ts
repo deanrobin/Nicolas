@@ -33,7 +33,25 @@ async function request<T>(
     },
     ...options,
   })
-  const json: ApiResponse<T> = await res.json()
+  return parseApiResponse<T>(res)
+}
+
+async function parseApiResponse<T>(res: Response): Promise<T> {
+  const text = await res.text()
+  let json: ApiResponse<T> | null = null
+  try {
+    json = text ? (JSON.parse(text) as ApiResponse<T>) : null
+  } catch {
+    throw new Error(
+      `HTTP ${res.status} ${res.statusText}: ${text.slice(0, 200) || '(empty body)'}`,
+    )
+  }
+  if (!json) {
+    throw new Error(`HTTP ${res.status} ${res.statusText}: (empty body)`)
+  }
+  if (typeof json.code !== 'number') {
+    throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`)
+  }
   if (json.code !== 200) {
     throw new Error(json.message || `Error ${json.code}`)
   }
@@ -164,9 +182,8 @@ export const merchantApi = {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
       body: form,
     })
-    const json: import('../types/api').ApiResponse<{ filePath: string }> = await res.json()
-    if (json.code !== 200) throw new Error(json.message || `Error ${json.code}`)
-    return json.data.filePath
+    const data = await parseApiResponse<{ filePath: string }>(res)
+    return data.filePath
   },
 
   myListings: () => request<MyListings>('/merchant/listings'),

@@ -9,6 +9,7 @@ import org.web3j.abi.TypeReference;
 import org.web3j.abi.datatypes.Address;
 import org.web3j.abi.datatypes.Function;
 import org.web3j.abi.datatypes.Type;
+import org.web3j.abi.datatypes.generated.Bytes32;
 import org.web3j.abi.datatypes.generated.Uint256;
 import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.DefaultBlockParameterName;
@@ -113,6 +114,77 @@ public class ChainQueryService {
         }
         return Optional.empty();
     }
+
+    /**
+     * Probe the configured USDT contract for ERC-2612 (`permit`) support.
+     * If both {@code DOMAIN_SEPARATOR()} and {@code nonces(address)} respond
+     * cleanly, the token is overwhelmingly likely to also expose
+     * {@code permit(...)}. Used to decide whether buyers can sign a permit
+     * off-chain so the operator wallet can pay gas on their behalf.
+     */
+    public PermitProbe probeUsdtPermitSupport() {
+        Optional<String> ds = readUsdtDomainSeparator();
+        Optional<BigInteger> nonces = readUsdtNonces("0x0000000000000000000000000000000000000000");
+        boolean supported = ds.isPresent() && nonces.isPresent();
+        return new PermitProbe(
+                chainConfig.getUsdtAddress(),
+                supported,
+                ds.orElse(null),
+                nonces.map(BigInteger::toString).orElse(null)
+        );
+    }
+
+    private Optional<String> readUsdtDomainSeparator() {
+        try {
+            Function fn = new Function(
+                    "DOMAIN_SEPARATOR",
+                    List.of(),
+                    List.of(new TypeReference<Bytes32>() {})
+            );
+            String data = FunctionEncoder.encode(fn);
+            Transaction tx = Transaction.createEthCallTransaction(
+                    null, chainConfig.getUsdtAddress(), data);
+            EthCall call = web3j.ethCall(tx, DefaultBlockParameterName.LATEST).send();
+            if (call.hasError()) return Optional.empty();
+            String value = call.getValue();
+            if (!StringUtils.hasText(value) || "0x".equals(value)) return Optional.empty();
+            List<Type> decoded = FunctionReturnDecoder.decode(value, fn.getOutputParameters());
+            if (decoded.isEmpty()) return Optional.empty();
+            byte[] bytes = (byte[]) decoded.get(0).getValue();
+            return Optional.of(Numeric.toHexString(bytes));
+        } catch (Exception e) {
+            return Optional.empty();
+        }
+    }
+
+    private Optional<BigInteger> readUsdtNonces(String owner) {
+        try {
+            Function fn = new Function(
+                    "nonces",
+                    List.of(new Address(owner)),
+                    List.of(new TypeReference<Uint256>() {})
+            );
+            String data = FunctionEncoder.encode(fn);
+            Transaction tx = Transaction.createEthCallTransaction(
+                    null, chainConfig.getUsdtAddress(), data);
+            EthCall call = web3j.ethCall(tx, DefaultBlockParameterName.LATEST).send();
+            if (call.hasError()) return Optional.empty();
+            String value = call.getValue();
+            if (!StringUtils.hasText(value) || "0x".equals(value)) return Optional.empty();
+            List<Type> decoded = FunctionReturnDecoder.decode(value, fn.getOutputParameters());
+            if (decoded.isEmpty()) return Optional.empty();
+            return Optional.of((BigInteger) decoded.get(0).getValue());
+        } catch (Exception e) {
+            return Optional.empty();
+        }
+    }
+
+    public record PermitProbe(
+            String usdtAddress,
+            boolean supported,
+            String domainSeparator,
+            String nonceForZeroAddress
+    ) {}
 
     /** Convenience: convert a 6-decimal raw value to a human-readable string. */
     public static String formatUsdt(BigInteger raw) {

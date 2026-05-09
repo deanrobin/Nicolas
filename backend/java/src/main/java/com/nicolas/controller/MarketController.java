@@ -2,10 +2,13 @@ package com.nicolas.controller;
 
 import com.nicolas.config.ChainConfig;
 import com.nicolas.config.PaymentConfig;
+import com.nicolas.exception.BizException;
 import com.nicolas.model.dto.AgentListingView;
 import com.nicolas.model.dto.ApiResponse;
 import com.nicolas.model.dto.SkillListingView;
+import com.nicolas.model.entity.AgentListing;
 import com.nicolas.model.entity.PaymentOrder;
+import com.nicolas.model.entity.SkillListing;
 import com.nicolas.repository.AgentListingRepository;
 import com.nicolas.repository.SkillListingRepository;
 import com.nicolas.service.PaymentService;
@@ -51,6 +54,24 @@ public class MarketController {
         List<SkillListingView> data = skillRepo.findByStatusOrderByCreatedAtDesc("approved")
                 .stream().map(SkillListingView::from).toList();
         return ResponseEntity.ok(ApiResponse.ok(data));
+    }
+
+    /** Public detail view of one approved Agent listing. 404 if missing or unapproved. */
+    @GetMapping("/agents/{id}")
+    public ResponseEntity<ApiResponse<AgentListingView>> agent(@PathVariable Long id) {
+        AgentListing a = agentRepo.findById(id)
+                .filter(x -> "approved".equals(x.getStatus()))
+                .orElseThrow(() -> BizException.notFound("Agent listing not found"));
+        return ResponseEntity.ok(ApiResponse.ok(AgentListingView.from(a)));
+    }
+
+    /** Public detail view of one approved Skill listing. 404 if missing or unapproved. */
+    @GetMapping("/skills/{id}")
+    public ResponseEntity<ApiResponse<SkillListingView>> skill(@PathVariable Long id) {
+        SkillListing s = skillRepo.findById(id)
+                .filter(x -> "approved".equals(x.getStatus()))
+                .orElseThrow(() -> BizException.notFound("Skill listing not found"));
+        return ResponseEntity.ok(ApiResponse.ok(SkillListingView.from(s)));
     }
 
     /** Create a buy order for a skill. Returns order + payment instructions. */

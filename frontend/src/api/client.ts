@@ -195,6 +195,9 @@ export const marketApi = {
   agents: () => request<AgentListing[]>('/market/agents'),
   skills: () => request<SkillListing[]>('/market/skills'),
 
+  agent: (id: number) => request<AgentListing>(`/market/agents/${id}`),
+  skill: (id: number) => request<SkillListing>(`/market/skills/${id}`),
+
   buySkill: (skillId: number) =>
     request<BuySkillResponse>(`/market/skills/${skillId}/buy`, { method: 'POST' }),
 

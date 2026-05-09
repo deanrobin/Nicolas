@@ -8,7 +8,9 @@ import RegisterPage from './pages/RegisterPage'
 import VerifyEmailPage from './pages/VerifyEmailPage'
 import OnboardingPage from './pages/OnboardingPage'
 import AgentMarketPage from './pages/AgentMarketPage'
+import AgentDetailPage from './pages/AgentDetailPage'
 import SkillMarketPage from './pages/SkillMarketPage'
+import SkillDetailPage from './pages/SkillDetailPage'
 import WalletPage from './pages/settings/WalletPage'
 import RegisterSellerPage from './pages/seller/RegisterSellerPage'
 import SellerDashboardPage from './pages/seller/SellerDashboardPage'
@@ -45,7 +47,9 @@ export default function App() {
               element={<AuthGuard><AppLayout /></AuthGuard>}
             >
               <Route path="/market/agents" element={<AgentMarketPage />} />
+              <Route path="/market/agents/:id" element={<AgentDetailPage />} />
               <Route path="/market/skills" element={<SkillMarketPage />} />
+              <Route path="/market/skills/:id" element={<SkillDetailPage />} />
               <Route path="/seller/register" element={<RegisterSellerPage />} />
               <Route path="/seller/edit-profile" element={<RegisterSellerPage editMode />} />
               <Route path="/seller/dashboard" element={<SellerDashboardPage />} />

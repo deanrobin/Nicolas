@@ -12,6 +12,7 @@ import {
   CopyOutlined,
   CheckCircleOutlined,
   ThunderboltOutlined,
+  EyeOutlined,
 } from '@ant-design/icons'
 import { App as AntApp } from 'antd'
 import { useNavigate } from 'react-router-dom'
@@ -220,6 +221,7 @@ export default function SkillMarketPage() {
   const navigate = useNavigate()
   const { message } = AntApp.useApp()
   const [skills, setSkills] = useState<SkillListing[]>([])
+  const [ownedIds, setOwnedIds] = useState<Set<number>>(new Set())
   const [loading, setLoading] = useState(true)
   const [buyInfo, setBuyInfo] = useState<BuySkillResponse | null>(null)
   const [buyingId, setBuyingId] = useState<number | null>(null)
@@ -227,8 +229,18 @@ export default function SkillMarketPage() {
   const load = async () => {
     setLoading(true)
     try {
-      const data = await marketApi.skills()
+      const [data, orders] = await Promise.all([
+        marketApi.skills(),
+        marketApi.myOrders().catch(() => []),
+      ])
       setSkills(data)
+      setOwnedIds(
+        new Set(
+          orders
+            .filter((o) => o.orderType === 'SKILL' && o.status !== 'refunded')
+            .map((o) => o.listingId),
+        ),
+      )
     } catch (err) {
       message.error(err instanceof Error ? err.message : 'Failed to load skills')
     } finally {
@@ -371,16 +383,28 @@ export default function SkillMarketPage() {
                           <br />
                           <Text type="secondary" style={{ fontSize: 12 }}>Lifetime access</Text>
                         </div>
-                        <Button
-                          type="primary"
-                          size="small"
-                          icon={<ShoppingCartOutlined />}
-                          loading={buyingId === s.id}
-                          onClick={() => handleBuy(s.id)}
-                          style={{ borderRadius: 8, background: '#fa8c16', borderColor: '#fa8c16' }}
-                        >
-                          Buy
-                        </Button>
+                        {ownedIds.has(s.id) ? (
+                          <Button
+                            type="primary"
+                            size="small"
+                            icon={<EyeOutlined />}
+                            onClick={() => navigate(`/market/skills/${s.id}`)}
+                            style={{ borderRadius: 8 }}
+                          >
+                            View
+                          </Button>
+                        ) : (
+                          <Button
+                            type="primary"
+                            size="small"
+                            icon={<ShoppingCartOutlined />}
+                            loading={buyingId === s.id}
+                            onClick={() => handleBuy(s.id)}
+                            style={{ borderRadius: 8, background: '#fa8c16', borderColor: '#fa8c16' }}
+                          >
+                            Buy
+                          </Button>
+                        )}
                       </div>
                     </div>
                   </Card>

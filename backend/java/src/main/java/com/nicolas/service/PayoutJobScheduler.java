@@ -64,6 +64,36 @@ public class PayoutJobScheduler {
         PayoutJob job = jobRepo.findById(jobId).orElse(null);
         if (job == null || !"scheduled".equals(job.getStatus())) return;
 
+        // Gate on confirmed payment. PaymentConfirmationJob is responsible for moving
+        // 'confirming' -> 'paid' once the buyer's tx has enough on-chain confirmations.
+        // Without this gate, a fake or pending tx_hash would still trigger payout
+        // after holdback_hours.
+        PaymentOrder order = orderRepo.findById(job.getPaymentOrderId()).orElse(null);
+        if (order == null) {
+            log.warn("Payout job {} has no underlying order — cancelling", job.getId());
+            job.setStatus("cancelled");
+            job.setError("order not found");
+            jobRepo.save(job);
+            return;
+        }
+        if (!"paid".equals(order.getStatus())) {
+            if ("confirming".equals(order.getStatus())) {
+                // Buyer's tx not yet confirmed; come back later.
+                job.setScheduledAt(LocalDateTime.now().plusMinutes(5));
+                jobRepo.save(job);
+                log.info("Payout job {} deferred: order {} still confirming", job.getId(), order.getId());
+            } else {
+                // Reverted to pending_payment, refunded, or any other terminal state
+                // outside the happy path: stop trying.
+                job.setStatus("cancelled");
+                job.setError("order status=" + order.getStatus());
+                jobRepo.save(job);
+                log.info("Payout job {} cancelled: order {} status={}",
+                        job.getId(), order.getId(), order.getStatus());
+            }
+            return;
+        }
+
         job.setStatus("running");
         job.setAttempts(job.getAttempts() + 1);
         jobRepo.save(job);
@@ -75,12 +105,8 @@ public class PayoutJobScheduler {
             job.setError(null);
             jobRepo.save(job);
 
-            // Mark the underlying order as delivered.
-            PaymentOrder order = orderRepo.findById(job.getPaymentOrderId()).orElse(null);
-            if (order != null) {
-                order.setStatus("delivered");
-                orderRepo.save(order);
-            }
+            order.setStatus("delivered");
+            orderRepo.save(order);
             log.info("Payout job {} done: tx={}", job.getId(), txHash);
         } catch (Exception e) {
             log.error("Payout job {} failed (attempt {}): {}", job.getId(), job.getAttempts(), e.getMessage());

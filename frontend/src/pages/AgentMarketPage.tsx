@@ -6,6 +6,7 @@ import {
   SafetyCertificateOutlined,
   WalletOutlined,
   SyncOutlined,
+  EyeOutlined,
 } from '@ant-design/icons'
 import { App as AntApp } from 'antd'
 import { useNavigate } from 'react-router-dom'
@@ -22,13 +23,24 @@ export default function AgentMarketPage() {
   const navigate = useNavigate()
   const { message } = AntApp.useApp()
   const [agents, setAgents] = useState<AgentListing[]>([])
+  const [orderedIds, setOrderedIds] = useState<Set<number>>(new Set())
   const [loading, setLoading] = useState(true)
 
   const load = async () => {
     setLoading(true)
     try {
-      const data = await marketApi.agents()
+      const [data, orders] = await Promise.all([
+        marketApi.agents(),
+        marketApi.myOrders().catch(() => []),
+      ])
       setAgents(data)
+      setOrderedIds(
+        new Set(
+          orders
+            .filter((o) => o.orderType === 'AGENT' && o.status !== 'refunded')
+            .map((o) => o.listingId),
+        ),
+      )
     } catch (err) {
       message.error(err instanceof Error ? err.message : 'Failed to load agents')
     } finally {
@@ -166,15 +178,27 @@ export default function AgentMarketPage() {
                         <div>
                           <Text strong style={{ color: '#667eea' }}>{agent.priceUsdt} USDT / call</Text>
                         </div>
-                        <Button
-                          type="primary"
-                          size="small"
-                          disabled={!hasWallet()}
-                          title={!hasWallet() ? 'Connect wallet first' : ''}
-                          style={{ borderRadius: 8 }}
-                        >
-                          Order
-                        </Button>
+                        {orderedIds.has(agent.id) ? (
+                          <Button
+                            type="primary"
+                            size="small"
+                            icon={<EyeOutlined />}
+                            onClick={() => navigate(`/market/agents/${agent.id}`)}
+                            style={{ borderRadius: 8 }}
+                          >
+                            View
+                          </Button>
+                        ) : (
+                          <Button
+                            type="primary"
+                            size="small"
+                            disabled={!hasWallet()}
+                            title={!hasWallet() ? 'Connect wallet first' : ''}
+                            style={{ borderRadius: 8 }}
+                          >
+                            Order
+                          </Button>
+                        )}
                       </div>
                     </div>
                   </Card>

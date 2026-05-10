@@ -3,6 +3,7 @@ package com.nicolas.service;
 import com.nicolas.exception.BizException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -49,5 +50,38 @@ public class SkillFileService {
         }
 
         return userId + "/" + filename;
+    }
+
+    /**
+     * Resolve a stored skill file's relative path (from {@code skill_listings.file_path})
+     * to an absolute filesystem path, with a path-traversal guard so a malicious
+     * {@code "../../../etc/passwd"} value can't escape the upload directory.
+     */
+    public SkillFile load(String relativePath) {
+        if (!StringUtils.hasText(relativePath)) {
+            throw BizException.notFound("This skill has no server-hosted file");
+        }
+        Path base = Paths.get(uploadDir).toAbsolutePath().normalize();
+        Path resolved = base.resolve(relativePath).toAbsolutePath().normalize();
+        if (!resolved.startsWith(base)) {
+            throw BizException.forbidden("Invalid file path");
+        }
+        if (!Files.isRegularFile(resolved)) {
+            throw BizException.notFound("Deliverable file is missing on disk");
+        }
+        long size;
+        try {
+            size = Files.size(resolved);
+        } catch (IOException e) {
+            throw BizException.badRequest("Cannot stat file: " + e.getMessage());
+        }
+        return new SkillFile(resolved, resolved.getFileName().toString(), size);
+    }
+
+    public record SkillFile(Path path, String filename, long size) {
+        public String extension() {
+            int dot = filename.lastIndexOf('.');
+            return dot >= 0 ? filename.substring(dot) : "";
+        }
     }
 }

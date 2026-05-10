@@ -211,6 +211,55 @@ export const marketApi = {
     }),
 
   myOrders: () => request<PaymentOrder[]>('/market/orders/mine'),
+
+  /**
+   * Download the deliverable file for a paid/delivered SKILL order. Returns
+   * nothing — instead it triggers a browser file save via a blob + programmatic
+   * <a download>. Throws on non-200 with the backend's ApiResponse error message.
+   */
+  downloadOrderDeliverable: async (orderId: number): Promise<void> => {
+    const token = getToken()
+    const res = await fetch(`${BASE}/market/orders/${orderId}/download`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+    if (!res.ok) {
+      const text = await res.text()
+      let msg: string
+      try {
+        const json = JSON.parse(text)
+        msg = json?.message || `HTTP ${res.status}`
+      } catch {
+        msg = `HTTP ${res.status} ${res.statusText}: ${text.slice(0, 200) || '(empty body)'}`
+      }
+      throw new Error(msg)
+    }
+    const blob = await res.blob()
+    const filename = parseFilenameFromContentDisposition(res.headers.get('Content-Disposition'))
+      ?? `skill-${orderId}.bin`
+    triggerBlobDownload(blob, filename)
+  },
+}
+
+function parseFilenameFromContentDisposition(header: string | null): string | null {
+  if (!header) return null
+  // RFC 5987: filename*=UTF-8''<percent-encoded> takes priority over the legacy filename="…"
+  const m = header.match(/filename\*\s*=\s*UTF-8''([^;]+)/i)
+  if (m) {
+    try { return decodeURIComponent(m[1]) } catch { /* fall through */ }
+  }
+  const m2 = header.match(/filename="([^"]+)"/i)
+  return m2 ? m2[1] : null
+}
+
+function triggerBlobDownload(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 // ── Provider (service_provider admin) ────────────────────────────────────

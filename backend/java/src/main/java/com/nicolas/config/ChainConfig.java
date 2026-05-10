@@ -8,6 +8,9 @@ import org.web3j.protocol.Web3j;
 import org.web3j.protocol.http.HttpService;
 import org.springframework.util.StringUtils;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * XLayer chain wiring.
  *
@@ -32,6 +35,9 @@ public class ChainConfig {
 
     @Value("${chain.xlayer.usdt-address}")
     private String usdtAddress;
+
+    @Value("${chain.xlayer.usdt-gasfree-address:}")
+    private String usdtGasfreeAddress;
 
     @Value("${chain.escrow.address:}")
     private String escrowAddress;
@@ -59,9 +65,23 @@ public class ChainConfig {
         return Credentials.create(pk);
     }
 
-    public String getRpcUrl()         { return rpcUrl; }
-    public long   getChainId()        { return chainId; }
-    public String getUsdtAddress()    { return usdtAddress; }
-    public String getEscrowAddress()  { return escrowAddress; }
-    public String getOperatorAddress(){ return operatorAddress; }
+    public String getRpcUrl()             { return rpcUrl; }
+    public long   getChainId()            { return chainId; }
+    public String getUsdtAddress()        { return usdtAddress; }
+    public String getUsdtGasfreeAddress() { return usdtGasfreeAddress; }
+    public String getEscrowAddress()      { return escrowAddress; }
+    public String getOperatorAddress()    { return operatorAddress; }
+
+    /**
+     * Every contract address whose Transfer events count as a valid USDT payment.
+     * V1 currently recognises {@code usdt-address} (native XLayer USDT) and
+     * {@code usdt-gasfree-address} (OKX's paymaster-routed wrapper used by the
+     * "USDT 免 gas" Send UI). Either or both can be empty.
+     */
+    public List<String> getRecognizedUsdtAddresses() {
+        List<String> all = new ArrayList<>(2);
+        if (StringUtils.hasText(usdtAddress)) all.add(usdtAddress);
+        if (StringUtils.hasText(usdtGasfreeAddress)) all.add(usdtGasfreeAddress);
+        return all;
+    }
 }

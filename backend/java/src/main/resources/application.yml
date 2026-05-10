@@ -155,6 +155,11 @@ chain:
     rpc-url: ${XLAYER_RPC_URL:https://rpc.xlayer.tech}
     chain-id: ${XLAYER_CHAIN_ID:196}
     usdt-address: ${XLAYER_USDT_ADDRESS:0x1E4a5963aBFD975d8c9021ce480b42188849D41d}
+    # OKX Wallet's "USDT 免 gas" Send UI on XLayer routes through this paymaster-
+    # backed wrapper contract (transferWithAuthorization / EIP-3009). The Transfer
+    # log emits with this address as the source contract, so we accept it as a
+    # valid USDT for incoming-payment recognition. Set empty to disable.
+    usdt-gasfree-address: ${XLAYER_USDT_GASFREE_ADDRESS:0x779ded0c9e1022225f8e0630b35a9b54be713736}
   escrow:
     address: ${ESCROW_CONTRACT_ADDRESS:}
   operator:

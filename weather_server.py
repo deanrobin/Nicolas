@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Simple weather query HTTP server.
-Usage: python weather_server.py [--port 8888]
+Usage: python weather_server.py [--port 10555]
 Query: GET /weather?q=北京天气怎么样
 """
 
@@ -16,26 +16,26 @@ WEATHER_DATA = {
 }
 
 
-def query_weather(text: str) -> dict:
+def query_weather(text: str) -> tuple[int, str]:
     if "天气" not in text:
-        return {"code": 400, "message": '输入必须包含关键字"天气"', "data": None}
+        return 400, '输入必须包含关键字"天气"'
 
     for city, weather in WEATHER_DATA.items():
         if city in text:
-            return {"code": 200, "message": "ok", "data": {"city": city, "weather": weather}}
+            return 200, weather
 
     supported = "、".join(WEATHER_DATA.keys())
-    return {"code": 404, "message": f"暂不支持该城市，当前支持：{supported}", "data": None}
+    return 404, f"暂不支持该城市，当前支持：{supported}"
 
 
 class WeatherHandler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         print(f"[{self.log_date_time_string()}] {fmt % args}")
 
-    def _send_json(self, status: int, body: dict):
-        payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
+    def _send_text(self, status: int, text: str):
+        payload = text.encode("utf-8")
         self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
         self.send_header("Content-Length", str(len(payload)))
         self.end_headers()
         self.wfile.write(payload)
@@ -44,24 +44,23 @@ class WeatherHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
 
         if parsed.path != "/weather":
-            self._send_json(404, {"code": 404, "message": "Not Found", "data": None})
+            self._send_text(404, "Not Found")
             return
 
         params = parse_qs(parsed.query)
         q_list = params.get("q", [])
         if not q_list:
-            self._send_json(400, {"code": 400, "message": "缺少查询参数 q", "data": None})
+            self._send_text(400, "缺少查询参数 q")
             return
 
-        result = query_weather(q_list[0])
-        http_status = result["code"] if result["code"] in (200, 400, 404) else 500
-        self._send_json(http_status, result)
+        status, msg = query_weather(q_list[0])
+        self._send_text(status, msg)
 
     def do_POST(self):
         parsed = urlparse(self.path)
 
         if parsed.path != "/weather":
-            self._send_json(404, {"code": 404, "message": "Not Found", "data": None})
+            self._send_text(404, "Not Found")
             return
 
         length = int(self.headers.get("Content-Length", 0))
@@ -71,20 +70,19 @@ class WeatherHandler(BaseHTTPRequestHandler):
             body = json.loads(raw)
             text = body.get("q", "")
         except json.JSONDecodeError:
-            text = raw  # treat plain string body as query text
+            text = raw
 
         if not text:
-            self._send_json(400, {"code": 400, "message": "请求体为空或缺少字段 q", "data": None})
+            self._send_text(400, "请求体为空或缺少字段 q")
             return
 
-        result = query_weather(text)
-        http_status = result["code"] if result["code"] in (200, 400, 404) else 500
-        self._send_json(http_status, result)
+        status, msg = query_weather(text)
+        self._send_text(status, msg)
 
 
 def main():
     parser = argparse.ArgumentParser(description="Weather query HTTP server")
-    parser.add_argument("--port", type=int, default=8888, help="Listening port (default: 8888)")
+    parser.add_argument("--port", type=int, default=10555, help="Listening port (default: 10555)")
     parser.add_argument("--host", default="0.0.0.0", help="Bind host (default: 0.0.0.0)")
     args = parser.parse_args()
 

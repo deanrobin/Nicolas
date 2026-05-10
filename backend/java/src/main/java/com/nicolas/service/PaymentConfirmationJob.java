@@ -68,6 +68,22 @@ public class PaymentConfirmationJob {
     @Transactional
     public void processOrder(Long orderId, BigInteger head) throws Exception {
         PaymentOrder order = orderRepo.findById(orderId).orElse(null);
+        if (order != null) confirm(order, head);
+    }
+
+    /**
+     * The actual confirmation logic, separated from {@link #processOrder} so it
+     * can also be invoked inline from {@code PaymentService.submitTxHash} —
+     * runs one verification pass right after the buyer submits a tx hash so the
+     * HTTP response can return {@code paid} immediately when the tx is already
+     * mined with enough confirmations, instead of making the buyer wait up to
+     * 30s for the next scheduler tick.
+     *
+     * <p>Caller must already hold a transaction. This method has no
+     * {@code @Transactional} of its own so that exceptions thrown here do not
+     * mark the caller's transaction for rollback.
+     */
+    public void confirm(PaymentOrder order, BigInteger head) throws Exception {
         if (order == null || !"confirming".equals(order.getStatus())) return;
         if (!StringUtils.hasText(order.getTxHash())) return;
 

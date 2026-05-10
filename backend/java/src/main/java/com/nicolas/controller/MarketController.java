@@ -5,6 +5,7 @@ import com.nicolas.config.PaymentConfig;
 import com.nicolas.exception.BizException;
 import com.nicolas.model.dto.AgentListingView;
 import com.nicolas.model.dto.ApiResponse;
+import com.nicolas.model.dto.OrderDeliverableView;
 import com.nicolas.model.dto.PaymentOrderView;
 import com.nicolas.model.dto.SkillListingView;
 import com.nicolas.model.entity.AgentListing;
@@ -57,7 +58,7 @@ public class MarketController {
     @GetMapping("/agents")
     public ResponseEntity<ApiResponse<List<AgentListingView>>> agents() {
         List<AgentListingView> data = agentRepo.findByStatusOrderByCreatedAtDesc("approved")
-                .stream().map(AgentListingView::from).toList();
+                .stream().map(AgentListingView::fromPublic).toList();
         return ResponseEntity.ok(ApiResponse.ok(data));
     }
 
@@ -74,7 +75,7 @@ public class MarketController {
         AgentListing a = agentRepo.findById(id)
                 .filter(x -> "approved".equals(x.getStatus()))
                 .orElseThrow(() -> BizException.notFound("Agent listing not found"));
-        return ResponseEntity.ok(ApiResponse.ok(AgentListingView.from(a)));
+        return ResponseEntity.ok(ApiResponse.ok(AgentListingView.fromPublic(a)));
     }
 
     /** Public detail view of one approved Skill listing. 404 if missing or unapproved. */
@@ -129,6 +130,44 @@ public class MarketController {
             @AuthenticationPrincipal Long userId) {
         return ResponseEntity.ok(ApiResponse.ok(
                 paymentService.getMyOrders(userId).stream().map(PaymentOrderView::from).toList()));
+    }
+
+    /**
+     * Buyer-only deliverable info for a paid/delivered order. Sibling of the
+     * download endpoint below: the public listing responses no longer include
+     * {@code apiEndpoint} (agents) or {@code downloadUrl}/{@code filePath}
+     * (skills); this gated endpoint hands the buyer their entitled values
+     * once their order is on-chain confirmed.
+     *
+     * <p>SKILL: returns {@code (downloadUrl, hasFile)}. The file itself comes
+     * from {@code GET /orders/{id}/download}, not embedded here.
+     * <p>AGENT: returns {@code (apiEndpoint, deploymentMode)}; the buyer opens
+     * that URL in their browser / dispatches their own client to it.
+     */
+    @GetMapping("/orders/{id}/deliverable")
+    public ResponseEntity<ApiResponse<OrderDeliverableView>> orderDeliverable(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long id) {
+        PaymentOrder order = paymentService.getOrder(userId, id);
+        String s = order.getStatus();
+        if (!"paid".equals(s) && !"delivered".equals(s)) {
+            throw BizException.badRequest("Payment not confirmed yet (status=" + s + ")");
+        }
+        if ("SKILL".equals(order.getOrderType())) {
+            SkillListing skill = skillRepo.findById(order.getListingId())
+                    .orElseThrow(() -> BizException.notFound("Skill listing not found"));
+            String url = StringUtils.hasText(skill.getDownloadUrl()) ? skill.getDownloadUrl().trim() : null;
+            return ResponseEntity.ok(ApiResponse.ok(
+                    OrderDeliverableView.forSkill(url, StringUtils.hasText(skill.getFilePath()))));
+        }
+        if ("AGENT".equals(order.getOrderType())) {
+            AgentListing agent = agentRepo.findById(order.getListingId())
+                    .orElseThrow(() -> BizException.notFound("Agent listing not found"));
+            String url = StringUtils.hasText(agent.getApiEndpoint()) ? agent.getApiEndpoint().trim() : null;
+            return ResponseEntity.ok(ApiResponse.ok(
+                    OrderDeliverableView.forAgent(url, agent.getDeploymentMode())));
+        }
+        throw BizException.badRequest("Unknown order type: " + order.getOrderType());
     }
 
     /**

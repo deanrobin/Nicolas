@@ -8,6 +8,7 @@ import type {
   Merchant,
   MerchantRegisterRequest,
   MyListings,
+  OrderDeliverable,
   PaymentOrder,
   ProviderStats,
   SkillListing,
@@ -211,6 +212,12 @@ export const marketApi = {
     }),
 
   myOrders: () => request<PaymentOrder[]>('/market/orders/mine'),
+
+  // Buyer-only post-purchase deliverable info. Public listing responses no
+  // longer carry the sensitive fields (skill's downloadUrl/filePath, agent's
+  // apiEndpoint); this is the gated channel.
+  orderDeliverable: (orderId: number) =>
+    request<OrderDeliverable>(`/market/orders/${orderId}/deliverable`),
 
   /**
    * Download the deliverable file for a paid/delivered SKILL order. Returns

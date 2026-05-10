@@ -53,4 +53,33 @@ public record AgentListingView(
                 e.getUpdatedAt()
         );
     }
+
+    /**
+     * Strip {@code apiEndpoint} for public marketplace responses. The endpoint is
+     * the post-purchase deliverable — leaking it to anyone hitting
+     * {@code GET /market/agents/...} would defeat the paywall. Buyers fetch it
+     * via {@code GET /market/orders/{id}/deliverable} once their order is
+     * paid/delivered. {@code deploymentMode} stays so browsers can still see
+     * the EXTERNAL/HOSTED badge.
+     */
+    public static AgentListingView fromPublic(AgentListing e) {
+        return new AgentListingView(
+                e.getId(),
+                e.getMerchantId(),
+                e.getName(),
+                e.getDescription(),
+                e.getCategory(),
+                e.getPriceUsdt() == null ? null : e.getPriceUsdt().toPlainString(),
+                null,  // apiEndpoint — gated behind purchase
+                e.getDeploymentMode(),
+                e.getServiceInput(),
+                e.getServiceOutput(),
+                e.getTags(),
+                e.getStatus(),
+                e.getReviewReason(),
+                e.getReviewedAt(),
+                e.getCreatedAt(),
+                e.getUpdatedAt()
+        );
+    }
 }

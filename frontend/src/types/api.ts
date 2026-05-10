@@ -179,6 +179,20 @@ export interface BuySkillResponse {
   usdtDecimals: number
 }
 
+// Buyer-only deliverable info from GET /market/orders/{id}/deliverable.
+// Public listing responses no longer carry the sensitive fields (skill's
+// downloadUrl/filePath, agent's apiEndpoint) — buyers fetch them here once
+// their order reaches paid/delivered.
+export interface OrderDeliverable {
+  orderType: 'SKILL' | 'AGENT'
+  // SKILL fields
+  downloadUrl: string | null
+  hasFile: boolean
+  // AGENT fields
+  apiEndpoint: string | null
+  deploymentMode: AgentDeploymentMode | null
+}
+
 // ── window.ethereum (EIP-1193) ────────────────────────────────────────────
 declare global {
   interface Window {

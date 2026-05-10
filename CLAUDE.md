@@ -81,6 +81,12 @@ Nicolas is a full-stack AI agent platform split into four sub-projects:
 
 **V1 Demo / MVP 阶段强制约束**：
 
+- **V1 买家支付路径 = 手动转账 + tx_hash 校验**（Skill 与 Agent 同流程，详见
+  [`docs/Nicolas 支付托管 V1 平台钱包方案.MD`](docs/Nicolas%20支付托管%20V1%20平台钱包方案.MD) §12）：
+  dApp **不再**唤起钱包发交易，买家在自己钱包里把 USDT 转给平台地址，回前端贴 `tx_hash`，
+  后端确认时核对 `receipt.from == 下单时绑定的钱包`、抓 `nonce` 落库审计、`tx_hash` 全局唯一。
+  原因是 XLayer "USDT 免 gas" 只在 OKX Wallet 自家 Send UI 里才走 paymaster，dApp 唤起会被
+  钱包要 OKB gas，体验与官方宣传冲突。
 - **V1 Escrow = 平台钱包托管**：买家向平台收款钱包转账，Java 后端 DB Ledger + Job 完成放款和退款。
 - **V2 Escrow = 智能合约托管**：V2 再升级为 `NicolasEscrowV2` 合约接管资金执行层。
 - **合约不是 Demo P0**：以下功能**不得**作为 V1 必要前置条件：

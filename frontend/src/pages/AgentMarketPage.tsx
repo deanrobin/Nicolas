@@ -7,12 +7,14 @@ import {
   WalletOutlined,
   SyncOutlined,
   EyeOutlined,
+  ShoppingCartOutlined,
 } from '@ant-design/icons'
 import { App as AntApp } from 'antd'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
 import { marketApi } from '../api/client'
-import type { AgentListing } from '../types/api'
+import ManualPayModal from '../components/ManualPayModal'
+import type { AgentListing, BuySkillResponse } from '../types/api'
 
 const { Title, Text, Paragraph } = Typography
 
@@ -25,6 +27,8 @@ export default function AgentMarketPage() {
   const [agents, setAgents] = useState<AgentListing[]>([])
   const [orderedIds, setOrderedIds] = useState<Set<number>>(new Set())
   const [loading, setLoading] = useState(true)
+  const [buyInfo, setBuyInfo] = useState<BuySkillResponse | null>(null)
+  const [buyingId, setBuyingId] = useState<number | null>(null)
 
   const load = async () => {
     setLoading(true)
@@ -49,6 +53,23 @@ export default function AgentMarketPage() {
   }
 
   useEffect(() => { load() }, [])
+
+  const handleBuy = async (agentId: number) => {
+    if (!hasWallet()) {
+      message.warning('Bind a wallet first / 请先绑定钱包')
+      navigate('/settings/wallet')
+      return
+    }
+    setBuyingId(agentId)
+    try {
+      const info = await marketApi.buyAgent(agentId)
+      setBuyInfo(info)
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : 'Failed to create order')
+    } finally {
+      setBuyingId(null)
+    }
+  }
 
   return (
     <div>
@@ -192,11 +213,14 @@ export default function AgentMarketPage() {
                           <Button
                             type="primary"
                             size="small"
+                            icon={<ShoppingCartOutlined />}
                             disabled={!hasWallet()}
+                            loading={buyingId === agent.id}
                             title={!hasWallet() ? 'Connect wallet first' : ''}
+                            onClick={() => handleBuy(agent.id)}
                             style={{ borderRadius: 8 }}
                           >
-                            Order
+                            Buy
                           </Button>
                         )}
                       </div>
@@ -208,6 +232,14 @@ export default function AgentMarketPage() {
           </Row>
         )}
       </div>
+
+      <ManualPayModal
+        open={buyInfo !== null}
+        info={buyInfo}
+        kind="agent"
+        onClose={() => setBuyInfo(null)}
+        onSubmitted={load}
+      />
     </div>
   )
 }

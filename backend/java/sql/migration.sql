@@ -226,3 +226,17 @@ CREATE TABLE IF NOT EXISTS payout_jobs (
     UNIQUE KEY uk_payout_jobs_order (payment_order_id),
     KEY idx_payout_jobs_status_due (status, scheduled_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- [2026-05-09] V008 manual pay flow — buyer wallet snapshot, on-chain capture, tx_hash uniqueness
+-- 买家点 Buy 后不再 dApp 唤起钱包；自己用 OKX Wallet 转账 → 贴 tx_hash 给后端。
+-- 后端在确认时核对 receipt.from == 买家下单时绑定的钱包；同时把 tx 的 from/nonce 落库审计；
+-- tx_hash 全局唯一，防同一笔被多个订单复用。已存在的订单 buyer_wallet_address 暂留 NULL。
+ALTER TABLE payment_orders
+    ADD COLUMN buyer_wallet_address VARCHAR(42)
+        COMMENT '买家下单时绑定的钱包地址快照；确认时与 receipt.from 比对',
+    ADD COLUMN tx_from_address VARCHAR(42)
+        COMMENT '链上 tx 实际 from（确认时 PaymentConfirmationJob 抓取后落库，便于审计）',
+    ADD COLUMN tx_nonce BIGINT
+        COMMENT '链上 tx 的 nonce（同上）',
+    ADD UNIQUE KEY uk_payment_orders_tx_hash (tx_hash);

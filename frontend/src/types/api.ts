@@ -163,7 +163,10 @@ export interface PaymentOrder {
   amountUsdt: string
   status: OrderStatus
   platformWalletAddress: string
+  buyerWalletAddress: string | null
   txHash: string | null
+  txFromAddress: string | null
+  txNonce: number | null
   note: string | null
   createdAt: string
   updatedAt: string

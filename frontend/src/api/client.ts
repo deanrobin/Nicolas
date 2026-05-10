@@ -201,6 +201,9 @@ export const marketApi = {
   buySkill: (skillId: number) =>
     request<BuySkillResponse>(`/market/skills/${skillId}/buy`, { method: 'POST' }),
 
+  buyAgent: (agentId: number) =>
+    request<BuySkillResponse>(`/market/agents/${agentId}/buy`, { method: 'POST' }),
+
   submitTx: (orderId: number, txHash: string) =>
     request<PaymentOrder>(`/market/orders/${orderId}/submit-tx`, {
       method: 'POST',

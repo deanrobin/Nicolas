@@ -65,8 +65,14 @@ export default function ManualPayModal({
   const { order, usdtAddress, chainId } = info
   const accent = ACCENT[kind]
 
-  const copy = (text: string, label: string) => {
-    navigator.clipboard.writeText(text).then(() => message.success(`${label} copied`))
+  const copy = async (raw: string, label: string) => {
+    const text = (raw ?? '').trim()
+    try {
+      await copyToClipboard(text)
+      message.success(`${label} copied`)
+    } catch {
+      message.error(`Failed to copy ${label}. Browser blocked clipboard access — try copying manually.`)
+    }
   }
 
   const handleSubmit = async () => {
@@ -233,4 +239,30 @@ const boxStyle: React.CSSProperties = {
   border: '1px solid #f0f0f0',
   borderRadius: 8,
   padding: '10px 14px',
+}
+
+/**
+ * Copy with a fallback for non-secure contexts. The Clipboard API
+ * (`navigator.clipboard.writeText`) is undefined on plain HTTP origins
+ * (other than localhost), which is exactly how this app is currently
+ * served on the demo VM. Fall back to the legacy execCommand path so
+ * the buttons still work.
+ */
+async function copyToClipboard(text: string): Promise<void> {
+  if (typeof navigator !== 'undefined' && navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(text)
+    return
+  }
+  const ta = document.createElement('textarea')
+  ta.value = text
+  ta.setAttribute('readonly', '')
+  ta.style.position = 'fixed'
+  ta.style.opacity = '0'
+  ta.style.pointerEvents = 'none'
+  document.body.appendChild(ta)
+  ta.select()
+  ta.setSelectionRange(0, text.length)
+  let ok = false
+  try { ok = document.execCommand('copy') } finally { document.body.removeChild(ta) }
+  if (!ok) throw new Error('execCommand copy failed')
 }

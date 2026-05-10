@@ -9,6 +9,8 @@ import {
   Space,
   Result,
   Table,
+  Empty,
+  Alert,
 } from 'antd'
 import {
   ArrowLeftOutlined,
@@ -16,11 +18,17 @@ import {
   ClockCircleOutlined,
   CloseCircleOutlined,
   ApiOutlined,
+  RocketOutlined,
 } from '@ant-design/icons'
 import { App as AntApp } from 'antd'
 import { useNavigate, useParams } from 'react-router-dom'
 import { marketApi } from '../api/client'
-import type { AgentListing, OrderStatus, PaymentOrder } from '../types/api'
+import type {
+  AgentListing,
+  OrderDeliverable,
+  OrderStatus,
+  PaymentOrder,
+} from '../types/api'
 
 const { Title, Text, Paragraph } = Typography
 
@@ -40,6 +48,7 @@ export default function AgentDetailPage() {
 
   const [agent, setAgent] = useState<AgentListing | null>(null)
   const [orders, setOrders] = useState<PaymentOrder[]>([])
+  const [deliverable, setDeliverable] = useState<OrderDeliverable | null>(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
 
@@ -59,11 +68,27 @@ export default function AgentDetailPage() {
         ])
         if (cancelled) return
         setAgent(a)
-        setOrders(
-          all
-            .filter((o) => o.orderType === 'AGENT' && o.listingId === agentId && o.status !== 'refunded')
-            .sort((a, b) => b.id - a.id),
-        )
+        const mine = all
+          .filter((o) => o.orderType === 'AGENT' && o.listingId === agentId && o.status !== 'refunded')
+          .sort((x, y) => y.id - x.id)
+        setOrders(mine)
+
+        // If the buyer has a paid/delivered order for this agent, fetch the
+        // gated deliverable to surface the apiEndpoint. Public agent responses
+        // no longer carry it.
+        const usable = mine.find((o) => o.status === 'paid' || o.status === 'delivered')
+        if (usable) {
+          try {
+            const d = await marketApi.orderDeliverable(usable.id)
+            if (!cancelled) setDeliverable(d)
+          } catch (err) {
+            if (!cancelled) {
+              message.warning(err instanceof Error
+                ? `Could not load access info: ${err.message}`
+                : 'Could not load access info')
+            }
+          }
+        }
       } catch (err) {
         if (!cancelled) {
           setNotFound(true)
@@ -149,14 +174,6 @@ export default function AgentDetailPage() {
                   <span style={{ whiteSpace: 'pre-wrap' }}>{agent.serviceOutput}</span>
                 </Descriptions.Item>
               )}
-              {agent.apiEndpoint && (
-                <Descriptions.Item label="Endpoint">
-                  <Space>
-                    <ApiOutlined />
-                    <Text code style={{ wordBreak: 'break-all' }}>{agent.apiEndpoint}</Text>
-                  </Space>
-                </Descriptions.Item>
-              )}
             </Descriptions>
           )}
 
@@ -165,6 +182,45 @@ export default function AgentDetailPage() {
               <Text type="secondary" style={{ marginRight: 8 }}>Tags:</Text>
               {tags.map((t) => <Tag key={t}>{t}</Tag>)}
             </div>
+          )}
+
+          {deliverable && (
+            <Card
+              type="inner"
+              title={<span><RocketOutlined style={{ marginRight: 8 }} />Use this agent</span>}
+              style={{ background: '#f6f8ff' }}
+            >
+              {deliverable.deploymentMode === 'HOSTED' ? (
+                <Alert
+                  type="info"
+                  showIcon
+                  message="Hosted runtime"
+                  description="V1 demo doesn't include a hosted execution path yet. The seller's apiEndpoint will be wired through the platform in V2."
+                />
+              ) : deliverable.apiEndpoint ? (
+                <div>
+                  <Paragraph type="secondary" style={{ marginBottom: 12 }}>
+                    You're entitled to call this agent. Open the seller's endpoint in a new tab —
+                    treat the address below as a credential and don't share it publicly.
+                  </Paragraph>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <ApiOutlined style={{ color: '#667eea', fontSize: 18 }} />
+                    <Text code style={{ flex: 1, wordBreak: 'break-all' }}>{deliverable.apiEndpoint}</Text>
+                    <Button
+                      type="primary"
+                      icon={<RocketOutlined />}
+                      href={deliverable.apiEndpoint}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Open agent
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <Empty description="The seller hasn't published an endpoint for this agent yet — please contact them." />
+              )}
+            </Card>
           )}
 
           {hasHistory && (

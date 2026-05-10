@@ -112,28 +112,40 @@ public class PaymentConfirmationJob {
             return;
         }
 
-        // The manual-pay flow's central guard: the on-chain `from` MUST match
-        // the wallet the buyer had bound at order-creation time, otherwise a
-        // stranger could claim a free skill by pasting somebody else's tx hash.
-        String txFrom = receipt.getFrom();
+        // The manual-pay flow's central guard: the actual payer MUST match the
+        // wallet the buyer had bound at order-creation time, otherwise a stranger
+        // could claim a free skill by pasting somebody else's tx hash.
+        //
+        // We compare against the *Transfer log's* from, NOT the tx-level
+        // {@code receipt.getFrom()}. In the OKX GasFree paymaster path the
+        // tx-level from is the OKX relayer (e.g. 0xe6f0…), while the actual
+        // payer is encoded as the Transfer event's `from` topic.
+        String payer = transfer.get().from();
         if (StringUtils.hasText(order.getBuyerWalletAddress())
-                && !ChainQueryService.sameAddress(txFrom, order.getBuyerWalletAddress())) {
-            log.warn("Order {} tx {} from-address mismatch: tx.from={}, expected buyer wallet={} — leaving in confirming",
-                    order.getId(), order.getTxHash(), txFrom, order.getBuyerWalletAddress());
+                && !ChainQueryService.sameAddress(payer, order.getBuyerWalletAddress())) {
+            log.warn("Order {} tx {} payer mismatch: log.from={}, expected buyer wallet={} — leaving in confirming",
+                    order.getId(), order.getTxHash(), payer, order.getBuyerWalletAddress());
             return;
         }
 
-        // Capture from + nonce for audit. Receipt has `from`; nonce lives on
-        // the tx body, so one extra eth_getTransactionByHash call.
-        order.setTxFromAddress(txFrom);
+        // Persist the payer for audit. tx_nonce is the broadcaster's nonce —
+        // in the gasfree path this is the relayer's nonce, not the buyer's;
+        // we still record it so we can correlate with the broadcaster's tx
+        // history if there's ever a dispute.
+        order.setTxFromAddress(payer);
         Transaction txBody = chain.getTransaction(order.getTxHash()).orElse(null);
         if (txBody != null && txBody.getNonce() != null) {
             order.setTxNonce(txBody.getNonce().longValueExact());
         }
+        String relayer = receipt.getFrom();
+        if (StringUtils.hasText(relayer) && !ChainQueryService.sameAddress(relayer, payer)) {
+            log.info("Order {} tx {} broadcast via relayer {} (paymaster path; payer={})",
+                    order.getId(), order.getTxHash(), relayer, payer);
+        }
 
         order.setStatus("paid");
         orderRepo.save(order);
-        log.info("Order {} confirmed at block {} ({} confirmations) — marked paid (from={}, nonce={})",
-                order.getId(), txBlock, confirmations, txFrom, order.getTxNonce());
+        log.info("Order {} confirmed at block {} ({} confirmations) — marked paid (payer={}, nonce={})",
+                order.getId(), txBlock, confirmations, payer, order.getTxNonce());
     }
 }

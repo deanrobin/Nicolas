@@ -268,3 +268,27 @@ PayoutJobScheduler（holdback 到点；status 必须 == paid 才放款）
 - Buy 按钮 → 弹窗标题: "Pay with your wallet · 手动转账"
 - 副标题: "Open OKX Wallet (or any wallet on X Layer), send USDT to the address below, then paste the tx hash here."
 - 提示: "Nicolas does NOT auto-trigger your wallet — this avoids the dApp gas-fee path so you can use the wallet's built-in USDT-only flow if it provides one."
+
+
+### 12.5 兼容 OKX Wallet 的 "USDT 免 gas" 路径（paymaster wrapper）
+
+> 2026-05-10 修订。
+
+XLayer 上 OKX Wallet 的 "USDT 免 gas" Send UI 实际是把转账走 **paymaster wrapper 合约**：
+`0x779ded0c9e1022225f8e0630b35a9b54be713736`。它通过 EIP-3009 的
+`transferWithAuthorization` 让 OKX 自家 relayer 替买家广播交易并替他付 OKB gas。
+表现上：
+
+| 字段 | 标准 USDT 路径 | OKX GasFree paymaster 路径 |
+|---|---|---|
+| `receipt.from` | 买家钱包 | OKX relayer（如 `0xe6f0…`），**不是**买家 |
+| `Transfer log.address` | `0x1E4a…41d`（标准 USDT） | `0x779ded…713736`（GasFree wrapper） |
+| `Transfer.from` (topic[1]) | 买家钱包 | **买家钱包**（EIP-3009 授权人） |
+| `Transfer.to` (topic[2]) | 平台钱包 | 平台钱包 |
+| 手续费 | 买家付 OKB | OKX paymaster 兜底 |
+
+**确认逻辑相应放宽两点**：
+
+1. `findUsdtTransferTo` 现在认 `chain.xlayer.usdt-address` **或** `chain.xlayer.usdt-gasfree-address` 任一合约的 Transfer 事件
+2. 与 `buyer_wallet_address` 比对的字段从 `receipt.from` 改为 **Transfer log 的 from**（topic[1]） —— gasfree 路径下这才是真正的付款人
+3. `tx_from_address` 持久化的也是 Transfer.from（=真实付款人），便于审计；relayer 在日志里 INFO 记一行不入库

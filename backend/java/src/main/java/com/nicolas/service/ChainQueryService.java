@@ -102,18 +102,21 @@ public class ChainQueryService {
     }
 
     /**
-     * Find the first ERC-20 Transfer log inside {@code receipt} where the source contract
-     * is {@code USDT_ADDRESS} and the {@code to} field equals the platform wallet.
-     * Returns the raw amount (USDT smallest unit, 6 decimals) and the {@code from} address,
-     * or empty if no such log is present.
+     * Find the first ERC-20 Transfer log inside {@code receipt} where the source
+     * contract is one of the recognised USDT contracts (native USDT *or* the OKX
+     * GasFree paymaster wrapper) and {@code to} equals the platform wallet.
+     * Returns the raw amount (USDT smallest unit, 6 decimals) and the
+     * {@code from} address from the log topic — which is the actual buyer in
+     * the gasfree paymaster path, where the tx-level {@code from} is the
+     * relayer.
      */
     public Optional<UsdtTransfer> findUsdtTransferTo(TransactionReceipt receipt, String expectedTo) {
         if (receipt == null || expectedTo == null) return Optional.empty();
-        String usdt = chainConfig.getUsdtAddress();
+        List<String> recognized = chainConfig.getRecognizedUsdtAddresses();
         for (Log log : receipt.getLogs()) {
             if (log.getTopics() == null || log.getTopics().size() < 3) continue;
             if (!ERC20_TRANSFER_TOPIC.equalsIgnoreCase(log.getTopics().get(0))) continue;
-            if (!sameAddress(log.getAddress(), usdt)) continue;
+            if (recognized.stream().noneMatch(a -> sameAddress(log.getAddress(), a))) continue;
             String to = topicToAddress(log.getTopics().get(2));
             if (!sameAddress(to, expectedTo)) continue;
             String from = topicToAddress(log.getTopics().get(1));

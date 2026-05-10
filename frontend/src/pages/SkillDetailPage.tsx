@@ -18,7 +18,7 @@ import {
   ClockCircleOutlined,
   CloseCircleOutlined,
   LinkOutlined,
-  FileTextOutlined,
+  DownloadOutlined,
   SendOutlined,
 } from '@ant-design/icons'
 import { App as AntApp } from 'antd'
@@ -54,6 +54,7 @@ export default function SkillDetailPage() {
   const [notFound, setNotFound] = useState(false)
   const [txInput, setTxInput] = useState('')
   const [submittingTx, setSubmittingTx] = useState(false)
+  const [downloading, setDownloading] = useState(false)
 
   const reload = async () => {
     if (!Number.isFinite(skillId)) {
@@ -88,6 +89,18 @@ export default function SkillDetailPage() {
   }, [skillId])
 
   const goBack = () => navigate('/market/skills')
+
+  const handleDownload = async () => {
+    if (!order) return
+    setDownloading(true)
+    try {
+      await marketApi.downloadOrderDeliverable(order.id)
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : 'Failed to download')
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   const handleSubmitTx = async () => {
     if (!order) return
@@ -209,25 +222,29 @@ export default function SkillDetailPage() {
 
               {downloadable ? (
                 <div style={{ marginTop: 16 }}>
-                  {skill.downloadUrl && (
-                    <Button
-                      type="primary"
-                      icon={<LinkOutlined />}
-                      href={skill.downloadUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ background: '#fa8c16', borderColor: '#fa8c16', marginRight: 8 }}
-                    >
-                      Open download link
-                    </Button>
-                  )}
-                  {skill.filePath && (
-                    <span>
-                      <FileTextOutlined style={{ marginRight: 6 }} />
-                      <Text type="secondary">Server file:</Text>{' '}
-                      <Text code style={{ wordBreak: 'break-all' }}>{skill.filePath}</Text>
-                    </span>
-                  )}
+                  <Space wrap>
+                    {skill.filePath && (
+                      <Button
+                        type="primary"
+                        icon={<DownloadOutlined />}
+                        loading={downloading}
+                        onClick={handleDownload}
+                        style={{ background: '#fa8c16', borderColor: '#fa8c16' }}
+                      >
+                        Download
+                      </Button>
+                    )}
+                    {skill.downloadUrl && (
+                      <Button
+                        icon={<LinkOutlined />}
+                        href={skill.downloadUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        Open external link
+                      </Button>
+                    )}
+                  </Space>
                   {!skill.downloadUrl && !skill.filePath && (
                     <Empty description="No deliverable attached yet" />
                   )}

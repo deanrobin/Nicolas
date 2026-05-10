@@ -13,10 +13,18 @@ import com.nicolas.model.entity.SkillListing;
 import com.nicolas.repository.AgentListingRepository;
 import com.nicolas.repository.SkillListingRepository;
 import com.nicolas.service.PaymentService;
+import com.nicolas.service.SkillFileService;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -30,17 +38,20 @@ public class MarketController {
     private final PaymentService paymentService;
     private final ChainConfig chainConfig;
     private final PaymentConfig paymentConfig;
+    private final SkillFileService skillFileService;
 
     public MarketController(AgentListingRepository agentRepo,
                             SkillListingRepository skillRepo,
                             PaymentService paymentService,
                             ChainConfig chainConfig,
-                            PaymentConfig paymentConfig) {
+                            PaymentConfig paymentConfig,
+                            SkillFileService skillFileService) {
         this.agentRepo = agentRepo;
         this.skillRepo = skillRepo;
         this.paymentService = paymentService;
         this.chainConfig = chainConfig;
         this.paymentConfig = paymentConfig;
+        this.skillFileService = skillFileService;
     }
 
     @GetMapping("/agents")
@@ -118,5 +129,61 @@ public class MarketController {
             @AuthenticationPrincipal Long userId) {
         return ResponseEntity.ok(ApiResponse.ok(
                 paymentService.getMyOrders(userId).stream().map(PaymentOrderView::from).toList()));
+    }
+
+    /**
+     * Stream a skill order's deliverable file to its buyer. Authenticated;
+     * order must belong to caller and be in {@code paid} or {@code delivered}.
+     * Path-traversal protection lives in {@link SkillFileService#load(String)}.
+     */
+    @GetMapping("/orders/{id}/download")
+    public ResponseEntity<Resource> downloadOrderDeliverable(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long id) {
+        PaymentOrder order = paymentService.getOrder(userId, id);
+        if (!"SKILL".equals(order.getOrderType())) {
+            throw BizException.badRequest("Not a skill order");
+        }
+        String s = order.getStatus();
+        if (!"paid".equals(s) && !"delivered".equals(s)) {
+            throw BizException.badRequest("Payment not confirmed yet (status=" + s + ")");
+        }
+
+        SkillListing skill = skillRepo.findById(order.getListingId())
+                .orElseThrow(() -> BizException.notFound("Skill listing not found"));
+        SkillFileService.SkillFile file = skillFileService.load(skill.getFilePath());
+
+        String suggested = makeFilename(skill.getName(), skill.getId(), file.extension());
+        String fallback = sanitizeAscii(suggested);
+        String encoded = URLEncoder.encode(suggested, StandardCharsets.UTF_8).replace("+", "%20");
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.set(HttpHeaders.CONTENT_DISPOSITION,
+                "attachment; filename=\"" + fallback + "\"; filename*=UTF-8''" + encoded);
+
+        return ResponseEntity.ok()
+                .headers(headers)
+                .contentLength(file.size())
+                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .body(new FileSystemResource(file.path()));
+    }
+
+    private static String makeFilename(String skillName, Long skillId, String extension) {
+        String base = skillName == null ? "" : skillName.trim();
+        // Strip path separators / quotes / control chars; keep CJK and basic punctuation.
+        base = base.replaceAll("[\\p{Cntrl}\\\\/:*?\"<>|]", "_");
+        if (!StringUtils.hasText(base)) base = "skill-" + skillId;
+        if (base.length() > 80) base = base.substring(0, 80);
+        return base + (extension == null ? "" : extension);
+    }
+
+    private static String sanitizeAscii(String s) {
+        // RFC 6266 fallback (filename=...) needs ASCII; replace anything else with '_'.
+        StringBuilder out = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            out.append(c < 0x20 || c >= 0x7F || c == '"' ? '_' : c);
+        }
+        return out.toString();
     }
 }

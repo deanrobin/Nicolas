@@ -15,17 +15,22 @@ import com.nicolas.repository.PaymentOrderRepository;
 import com.nicolas.repository.PayoutJobRepository;
 import com.nicolas.repository.SkillListingRepository;
 import com.nicolas.repository.UserWalletRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
 public class PaymentService {
+
+    private static final Logger log = LoggerFactory.getLogger(PaymentService.class);
 
     private static final List<String> ACTIVE_STATUSES =
         List.of("pending_payment", "confirming", "paid");
@@ -40,6 +45,8 @@ public class PaymentService {
     private final PayoutJobRepository payoutRepo;
     private final ChainConfig chainConfig;
     private final PaymentConfig paymentConfig;
+    private final ChainQueryService chainQuery;
+    private final PaymentConfirmationJob confirmationJob;
 
     public PaymentService(PaymentOrderRepository orderRepo,
                           SkillListingRepository skillRepo,
@@ -48,7 +55,9 @@ public class PaymentService {
                           UserWalletRepository walletRepo,
                           PayoutJobRepository payoutRepo,
                           ChainConfig chainConfig,
-                          PaymentConfig paymentConfig) {
+                          PaymentConfig paymentConfig,
+                          ChainQueryService chainQuery,
+                          PaymentConfirmationJob confirmationJob) {
         this.orderRepo = orderRepo;
         this.skillRepo = skillRepo;
         this.agentRepo = agentRepo;
@@ -57,6 +66,8 @@ public class PaymentService {
         this.payoutRepo = payoutRepo;
         this.chainConfig = chainConfig;
         this.paymentConfig = paymentConfig;
+        this.chainQuery = chainQuery;
+        this.confirmationJob = confirmationJob;
     }
 
     @Transactional
@@ -146,6 +157,20 @@ public class PaymentService {
 
         // Schedule the payout job (release window = holdback hours)
         schedulePayoutJob(order);
+
+        // Run the same confirmation pass the scheduler runs every 30s, once,
+        // synchronously — when the buyer's tx is already mined with enough
+        // confirmations (often the case if they paste the hash a few seconds
+        // after broadcasting), the response can return `paid` immediately
+        // instead of making them wait for the next scheduler tick. Any
+        // failure (RPC down, not mined yet, mismatched receipt) just leaves
+        // the order in `confirming` and the scheduler retries.
+        try {
+            BigInteger head = chainQuery.currentBlockNumber();
+            confirmationJob.confirm(order, head);
+        } catch (Exception e) {
+            log.warn("Inline confirmation skipped for order {}: {}", order.getId(), e.getMessage());
+        }
 
         return order;
     }

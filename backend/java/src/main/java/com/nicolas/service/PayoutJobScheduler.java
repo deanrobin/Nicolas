@@ -105,7 +105,13 @@ public class PayoutJobScheduler {
             job.setError(null);
             jobRepo.save(job);
 
+            // Terminal marker: settled_at is the source of truth that prevents
+            // a second settlement cycle from picking this order up. The status
+            // transition to 'delivered' is preserved for backwards-compat with
+            // the existing frontend label, but the SettlementCutoffJob filter
+            // ignores status and only checks settled_at IS NULL.
             order.setStatus("delivered");
+            order.setSettledAt(LocalDateTime.now());
             orderRepo.save(order);
             log.info("Payout job {} done: tx={}", job.getId(), txHash);
         } catch (Exception e) {

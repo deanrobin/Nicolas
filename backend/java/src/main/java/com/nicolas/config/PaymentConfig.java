@@ -56,8 +56,12 @@ public class PaymentConfig {
      * Override the crons to e.g. every 30 seconds for live demos.
      */
     public static class Settlement {
-        private String cutoffCron = "0 0 12 ? * FRI";
-        private String payoutCron = "0 0 12 ? * SUN";
+        // Spring's @Scheduled cron is 6-field Unix-extended (sec min hr dom mon dow);
+        // it does NOT accept the Quartz '?' placeholder. Defaults below pick:
+        //   cutoff = every Friday 12:00:00 — flips eligible orders to settle_pending
+        //   payout = every Sunday  12:00:00 — start of the payout drip window
+        private String cutoffCron = "0 0 12 * * FRI";
+        private String payoutCron = "0 0 12 * * SUN";
         private int payoutWindowHours = 8;
 
         public String getCutoffCron() { return cutoffCron; }

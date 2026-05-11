@@ -99,8 +99,9 @@ nicolas:
     payout-enabled: ${PAYOUT_JOB_ENABLED:true}
     confirmation-blocks: ${PAYMENT_CONFIRMATION_BLOCKS:3}
     settlement:
-      cutoff-cron: ${SETTLEMENT_CUTOFF_CRON:0 0 12 ? * FRI}
-      payout-cron: ${SETTLEMENT_PAYOUT_CRON:0 0 12 ? * SUN}
+      # Spring @Scheduled cron — 6-field "sec min hr dom mon dow". No Quartz '?'.
+      cutoff-cron: ${SETTLEMENT_CUTOFF_CRON:0 0 12 * * FRI}
+      payout-cron: ${SETTLEMENT_PAYOUT_CRON:0 0 12 * * SUN}
       payout-window-hours: ${SETTLEMENT_PAYOUT_WINDOW_HOURS:8}
     x402:
       enabled: ${X402_ENABLED:true}

@@ -177,6 +177,76 @@ export interface BuySkillResponse {
   usdtAddress: string
   chainId: number
   usdtDecimals: number
+  /**
+   * x402 HTTP-402 style payment challenge. Present when the backend has
+   * x402 enabled and the OKX Facilitator credentials configured. The frontend
+   * picks {@link X402Challenge.accepts}[0] and feeds it into OKX Wallet's
+   * EIP-712 typed-data signer.
+   */
+  x402?: X402Challenge
+}
+
+/** x402 payment challenge embedded in the buy response. */
+export interface X402Challenge {
+  x402Version: number
+  error: string
+  accepts: X402PaymentRequirement[]
+}
+
+/**
+ * One acceptable payment configuration in an x402 challenge. The buyer's
+ * frontend must echo back these fields (asset / payTo / amount / network)
+ * inside the signed authorization — both the OKX Facilitator and the
+ * Nicolas backend will reject mismatches.
+ */
+export interface X402PaymentRequirement {
+  scheme: 'exact'
+  /** CAIP-2 network identifier, e.g. "eip155:196" for XLayer. */
+  network: string
+  /** Amount in token atomic units (raw uint256 as decimal string). */
+  amount: string
+  /** EIP-3009 token contract (e.g. USD₮0). */
+  asset: string
+  /** Recipient address — the Nicolas platform wallet for V1. */
+  payTo: string
+  maxTimeoutSeconds: number
+  /** EIP-712 domain extras for the token (name + version). */
+  extra: { name: string; version: string }
+}
+
+/** EIP-3009 authorization fields the buyer signs over typed data. */
+export interface X402Authorization {
+  from: string
+  to: string
+  /** uint256 as decimal string. */
+  value: string
+  /** uint256 as decimal string. */
+  validAfter: string
+  /** uint256 as decimal string. */
+  validBefore: string
+  /** bytes32 hex (0x-prefixed). */
+  nonce: string
+}
+
+/** The blob the frontend POSTs to /market/orders/{id}/x402-settle. */
+export interface X402PaymentPayload {
+  x402Version: number
+  scheme: 'exact'
+  network: string
+  payload: {
+    signature: string
+    authorization: X402Authorization
+  }
+  /** Echo of the {@link X402PaymentRequirement} the buyer accepted. */
+  accepted: {
+    scheme: 'exact'
+    network: string
+    amount: string
+    asset: string
+    payTo: string
+  }
+  /** The resource the buyer was paying for — Nicolas uses the order URL. */
+  resource: { url: string }
 }
 
 // Buyer-only deliverable info from GET /market/orders/{id}/deliverable.
@@ -200,6 +270,14 @@ declare global {
       request: (args: { method: string; params?: unknown[] }) => Promise<unknown>
       isOkxWallet?: boolean
       isMetaMask?: boolean
+    }
+    /**
+     * OKX Wallet's own provider namespace. EIP-1193 shape, identical surface
+     * to window.ethereum, but always points to OKX Wallet specifically (no
+     * conflict with MetaMask). Preferred when present.
+     */
+    okxwallet?: {
+      request: (args: { method: string; params?: unknown[] }) => Promise<unknown>
     }
   }
 }

@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSONObject;
 import com.nicolas.config.ChainConfig;
 import com.nicolas.config.PaymentConfig;
 import com.nicolas.exception.BizException;
+import com.nicolas.model.dto.AgentInvocationView;
 import com.nicolas.model.dto.AgentListingView;
 import com.nicolas.model.dto.ApiResponse;
 import com.nicolas.model.dto.OrderDeliverableView;
@@ -15,6 +16,7 @@ import com.nicolas.model.entity.PaymentOrder;
 import com.nicolas.model.entity.SkillListing;
 import com.nicolas.repository.AgentListingRepository;
 import com.nicolas.repository.SkillListingRepository;
+import com.nicolas.service.AgentInvocationService;
 import com.nicolas.service.OrderDisputeService;
 import com.nicolas.service.PaymentService;
 import com.nicolas.service.SkillFileService;
@@ -43,6 +45,7 @@ public class MarketController {
     private final PaymentService paymentService;
     private final X402PaymentService x402Service;
     private final OrderDisputeService disputeService;
+    private final AgentInvocationService invocationService;
     private final ChainConfig chainConfig;
     private final PaymentConfig paymentConfig;
     private final SkillFileService skillFileService;
@@ -52,6 +55,7 @@ public class MarketController {
                             PaymentService paymentService,
                             X402PaymentService x402Service,
                             OrderDisputeService disputeService,
+                            AgentInvocationService invocationService,
                             ChainConfig chainConfig,
                             PaymentConfig paymentConfig,
                             SkillFileService skillFileService) {
@@ -60,6 +64,7 @@ public class MarketController {
         this.paymentService = paymentService;
         this.x402Service = x402Service;
         this.disputeService = disputeService;
+        this.invocationService = invocationService;
         this.chainConfig = chainConfig;
         this.paymentConfig = paymentConfig;
         this.skillFileService = skillFileService;
@@ -175,6 +180,34 @@ public class MarketController {
         if (req == null) throw BizException.badRequest("Request body required");
         return ResponseEntity.ok(ApiResponse.ok(
                 OrderDisputeView.from(disputeService.open(userId, id, req.reason()))));
+    }
+
+    public record InvokeAgentRequest(String input) {}
+
+    /**
+     * Run one AGENT call against a paid order. The order acts as a one-shot
+     * "call ticket": after a successful invocation the order moves to
+     * {@code delivered} and cannot be re-used — the buyer must create a fresh
+     * order to call the agent again. Failures (network / 5xx / timeout) are
+     * not persisted, leaving the order at {@code paid} for retry.
+     */
+    @PostMapping("/orders/{id}/invoke")
+    public ResponseEntity<ApiResponse<AgentInvocationView>> invokeAgent(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long id,
+            @RequestBody InvokeAgentRequest req) {
+        if (req == null) throw BizException.badRequest("Request body required");
+        return ResponseEntity.ok(ApiResponse.ok(
+                AgentInvocationView.from(invocationService.invoke(userId, id, req.input()))));
+    }
+
+    /** Fetch the recorded invocation for a (typically {@code delivered}) AGENT order. */
+    @GetMapping("/orders/{id}/invocation")
+    public ResponseEntity<ApiResponse<AgentInvocationView>> getInvocation(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long id) {
+        return ResponseEntity.ok(ApiResponse.ok(
+                AgentInvocationView.from(invocationService.getByOrderId(userId, id))));
     }
 
     /** Buyer's own orders. */

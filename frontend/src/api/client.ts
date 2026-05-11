@@ -1,4 +1,5 @@
 import type {
+  AgentInvocation,
   AgentListing,
   AgentListingRequest,
   ApiResponse,
@@ -223,6 +224,22 @@ export const marketApi = {
       method: 'POST',
       body: JSON.stringify({ paymentPayload }),
     }),
+
+  /**
+   * Run one AGENT call against a paid order. One paid order = one invocation;
+   * after success the order moves to {@code delivered} and a new order is
+   * required for the next call. Failures (5xx / timeout) leave the order at
+   * {@code paid} for retry.
+   */
+  invokeAgent: (orderId: number, input: string) =>
+    request<AgentInvocation>(`/market/orders/${orderId}/invoke`, {
+      method: 'POST',
+      body: JSON.stringify({ input }),
+    }),
+
+  /** Fetch the recorded invocation for an already-delivered AGENT order. */
+  getInvocation: (orderId: number) =>
+    request<AgentInvocation>(`/market/orders/${orderId}/invocation`),
 
   myOrders: () => request<PaymentOrder[]>('/market/orders/mine'),
 

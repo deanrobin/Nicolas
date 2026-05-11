@@ -38,10 +38,13 @@ export default function AgentMarketPage() {
         marketApi.myOrders().catch(() => []),
       ])
       setAgents(data)
+      // Only treat in-flight orders as "active" — once delivered (the AGENT
+      // ticket has been consumed) or refunded, the buyer can buy again.
+      const ACTIVE = new Set(['pending_payment', 'confirming', 'paid'])
       setOrderedIds(
         new Set(
           orders
-            .filter((o) => o.orderType === 'AGENT' && o.status !== 'refunded')
+            .filter((o) => o.orderType === 'AGENT' && ACTIVE.has(o.status))
             .map((o) => o.listingId),
         ),
       )

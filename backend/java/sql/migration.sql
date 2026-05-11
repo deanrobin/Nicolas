@@ -287,3 +287,29 @@ CREATE TABLE IF NOT EXISTS order_disputes (
     UNIQUE KEY uk_order_disputes_order (order_id),
     KEY idx_order_disputes_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- [2026-05-12] V010 AGENT 按次调用日志 agent_invocations
+-- 每笔 AGENT PaymentOrder 是一张"调用券"：buy → x402 settle → status='paid'
+-- → 一次 invoke（POST 商家 apiEndpoint）→ 落 input/output → status='delivered'。
+-- 失败（商家服务挂了 / 网络错）不落库，订单留在 paid 可重试；只有成功
+-- (response_status='succeeded') 才插入并把订单推到 delivered。
+-- 商家结算仍走周结算（settled_at 控）—— 一次成功调用对应一次未来放款。
+CREATE TABLE IF NOT EXISTS agent_invocations (
+    id               BIGINT       NOT NULL AUTO_INCREMENT,
+    order_id         BIGINT       NOT NULL,
+    buyer_id         BIGINT       NOT NULL,
+    agent_listing_id BIGINT       NOT NULL,
+    input            TEXT         NOT NULL,
+    output           MEDIUMTEXT   COMMENT '商家 endpoint 原样返回 body',
+    response_status  VARCHAR(16)  NOT NULL DEFAULT 'succeeded'
+                     COMMENT 'succeeded（失败路径不落库）',
+    invoked_at       DATETIME     NOT NULL,
+    completed_at     DATETIME,
+    created_at       DATETIME     NOT NULL,
+    updated_at       DATETIME     NOT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_agent_invocations_order (order_id),
+    KEY idx_agent_invocations_buyer (buyer_id),
+    KEY idx_agent_invocations_agent (agent_listing_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

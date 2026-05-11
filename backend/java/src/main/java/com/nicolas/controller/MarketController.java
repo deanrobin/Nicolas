@@ -1,5 +1,6 @@
 package com.nicolas.controller;
 
+import com.alibaba.fastjson2.JSONObject;
 import com.nicolas.config.ChainConfig;
 import com.nicolas.config.PaymentConfig;
 import com.nicolas.exception.BizException;
@@ -15,6 +16,7 @@ import com.nicolas.repository.AgentListingRepository;
 import com.nicolas.repository.SkillListingRepository;
 import com.nicolas.service.PaymentService;
 import com.nicolas.service.SkillFileService;
+import com.nicolas.service.X402PaymentService;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
@@ -37,6 +39,7 @@ public class MarketController {
     private final AgentListingRepository agentRepo;
     private final SkillListingRepository skillRepo;
     private final PaymentService paymentService;
+    private final X402PaymentService x402Service;
     private final ChainConfig chainConfig;
     private final PaymentConfig paymentConfig;
     private final SkillFileService skillFileService;
@@ -44,12 +47,14 @@ public class MarketController {
     public MarketController(AgentListingRepository agentRepo,
                             SkillListingRepository skillRepo,
                             PaymentService paymentService,
+                            X402PaymentService x402Service,
                             ChainConfig chainConfig,
                             PaymentConfig paymentConfig,
                             SkillFileService skillFileService) {
         this.agentRepo = agentRepo;
         this.skillRepo = skillRepo;
         this.paymentService = paymentService;
+        this.x402Service = x402Service;
         this.chainConfig = chainConfig;
         this.paymentConfig = paymentConfig;
         this.skillFileService = skillFileService;
@@ -109,6 +114,9 @@ public class MarketController {
         data.put("usdtAddress", chainConfig.getUsdtAddress());
         data.put("chainId", chainConfig.getChainId());
         data.put("usdtDecimals", paymentConfig.getUsdtDecimals());
+        if (x402Service.isEnabled()) {
+            data.put("x402", x402Service.buildChallenge(order));
+        }
         return data;
     }
 
@@ -122,6 +130,28 @@ public class MarketController {
             @RequestBody SubmitTxRequest req) {
         return ResponseEntity.ok(ApiResponse.ok(
                 PaymentOrderView.from(paymentService.submitTxHash(userId, id, req.txHash()))));
+    }
+
+    public record X402SettleRequest(JSONObject paymentPayload) {}
+
+    /**
+     * Buyer submits an x402 {@code paymentPayload} (EIP-712 typed-data
+     * signature from OKX Wallet). The server forwards it to OKX Facilitator
+     * {@code /verify} + {@code /settle}, records the resulting tx hash,
+     * does its own short receipt confirmation, and returns the updated
+     * order. On success the order is already {@code paid}; if confirmation
+     * lagged, it sits in {@code confirming} for the scheduler to finalize.
+     */
+    @PostMapping("/orders/{id}/x402-settle")
+    public ResponseEntity<ApiResponse<PaymentOrderView>> x402Settle(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long id,
+            @RequestBody X402SettleRequest req) {
+        if (req == null || req.paymentPayload() == null) {
+            throw BizException.badRequest("paymentPayload is required");
+        }
+        return ResponseEntity.ok(ApiResponse.ok(
+                PaymentOrderView.from(x402Service.settle(userId, id, req.paymentPayload()))));
     }
 
     /** Buyer's own orders. */

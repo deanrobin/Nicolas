@@ -48,6 +48,26 @@ public class PaymentOrder {
     @Column(name = "tx_nonce")
     private Long txNonce;
 
+    /** x402 EIP-712 signer (authorization.from) — recorded once OKX /settle returns. */
+    @Column(name = "x402_signer_address", length = 42)
+    private String x402SignerAddress;
+
+    /** Moment OKX /settle returned success (syncSettle path). */
+    @Column(name = "x402_settled_at")
+    private LocalDateTime x402SettledAt;
+
+    /** {@code null} = no dispute. {@code open / resolved / rejected} otherwise. */
+    @Column(name = "dispute_status", length = 16)
+    private String disputeStatus;
+
+    /** Hard cutoff for the buyer to open a dispute; once past, weekly job queues a payout. */
+    @Column(name = "dispute_deadline_at")
+    private LocalDateTime disputeDeadlineAt;
+
+    /** Set once the merchant payout has been broadcast — terminal, blocks re-settle. */
+    @Column(name = "settled_at")
+    private LocalDateTime settledAt;
+
     @Column(length = 500)
     private String note;
 
@@ -91,6 +111,16 @@ public class PaymentOrder {
     public void setTxFromAddress(String txFromAddress) { this.txFromAddress = txFromAddress; }
     public Long getTxNonce() { return txNonce; }
     public void setTxNonce(Long txNonce) { this.txNonce = txNonce; }
+    public String getX402SignerAddress() { return x402SignerAddress; }
+    public void setX402SignerAddress(String x402SignerAddress) { this.x402SignerAddress = x402SignerAddress; }
+    public LocalDateTime getX402SettledAt() { return x402SettledAt; }
+    public void setX402SettledAt(LocalDateTime x402SettledAt) { this.x402SettledAt = x402SettledAt; }
+    public String getDisputeStatus() { return disputeStatus; }
+    public void setDisputeStatus(String disputeStatus) { this.disputeStatus = disputeStatus; }
+    public LocalDateTime getDisputeDeadlineAt() { return disputeDeadlineAt; }
+    public void setDisputeDeadlineAt(LocalDateTime disputeDeadlineAt) { this.disputeDeadlineAt = disputeDeadlineAt; }
+    public LocalDateTime getSettledAt() { return settledAt; }
+    public void setSettledAt(LocalDateTime settledAt) { this.settledAt = settledAt; }
     public String getNote() { return note; }
     public void setNote(String note) { this.note = note; }
     public LocalDateTime getCreatedAt() { return createdAt; }

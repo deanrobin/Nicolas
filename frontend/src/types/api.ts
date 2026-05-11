@@ -263,6 +263,22 @@ export interface OrderDeliverable {
   deploymentMode: AgentDeploymentMode | null
 }
 
+// AGENT per-call invocation record. One paid AGENT order = at most one
+// successful invocation. Failures (5xx / timeout) do not persist; the order
+// stays at 'paid' for retry.
+export interface AgentInvocation {
+  id: number
+  orderId: number
+  buyerId: number
+  agentListingId: number
+  input: string
+  output: string | null
+  responseStatus: 'succeeded'
+  invokedAt: string
+  completedAt: string | null
+  createdAt: string
+}
+
 // ── window.ethereum (EIP-1193) ────────────────────────────────────────────
 declare global {
   interface Window {

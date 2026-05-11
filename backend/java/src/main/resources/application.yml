@@ -74,19 +74,45 @@ spring:
 skill:
   upload-dir: ${SKILL_UPLOAD_DIR:uploads/skills}
 
-# ── 支付与放款（V1 平台钱包托管） + 内容审核规则 ────────────────────────
-# fee-bps: 平台抽水费率，10000 = 100% （0 = 不抽水，默认）
-# holdback-hours: 买家提交 tx 之后，多少小时后执行放款（24h 用于争议窗口）
-# usdt-decimals: USDT 链上精度（XLayer 上是 6）
+# ── 支付与放款（V1 平台钱包托管 + V2 x402/OKX Facilitator） + 内容审核规则 ────
+# fee-bps: BPS 模式下的抽水费率，10000 = 100% （0 = 不抽水）
+# fee-mode: BPS（按比例，平台赚钱） | FIXED（固定金额，仅覆盖 gas）
+# fee-fixed-usdt: FIXED 模式下每笔订单的固定抽成金额（USDT）
+# holdback-hours: V1 manual-pay 兼容字段；V2 周结算优先用 settlement.* cron
+# settlement.cutoff-cron: 每周把"已支付+无纠纷"订单推进 settle_pending 的时刻（默认周五 12:00）
+# settlement.payout-cron: 周日批量放款的起始时刻（默认 12:00），后续 payout-window-hours 内错峰发出
+# settlement.payout-window-hours: 放款错峰窗口长度（小时），结合 payout-cron 决定结算"慢节奏"
+# x402.enabled: 开关；true 时 buy 响应里附带 x402 challenge
+# x402.facilitator-base-url: OKX Facilitator 根地址（与 onchainos.base-url 不同）
+# x402.token-address / token-name / token-version: EIP-3009 token 三件套（XLayer USD₮0）
+# x402.network: CAIP-2 网络 ID（XLayer = eip155:196）
+# x402.post-settle-confirm-sleep-ms: OKX /settle 返回后我们自己再 RPC 校验 receipt 前的等待时间
 # audit.* 与 agent/worker/audit_rules.yaml 保持一致：改这里 = 改 Python worker，
 # 两边的阈值与黑名单必须同步。Java 端在请求入口拒掉违规内容；worker 兜底再扫一遍 DB。
 nicolas:
   payment:
     fee-bps: ${PAYMENT_FEE_BPS:0}
+    fee-mode: ${PAYMENT_FEE_MODE:BPS}
+    fee-fixed-usdt: ${PAYMENT_FEE_FIXED_USDT:0}
     holdback-hours: ${PAYMENT_HOLDBACK_HOURS:24}
     usdt-decimals: ${USDT_DECIMALS:6}
     payout-enabled: ${PAYOUT_JOB_ENABLED:true}
     confirmation-blocks: ${PAYMENT_CONFIRMATION_BLOCKS:3}
+    settlement:
+      cutoff-cron: ${SETTLEMENT_CUTOFF_CRON:0 0 12 ? * FRI}
+      payout-cron: ${SETTLEMENT_PAYOUT_CRON:0 0 12 ? * SUN}
+      payout-window-hours: ${SETTLEMENT_PAYOUT_WINDOW_HOURS:8}
+    x402:
+      enabled: ${X402_ENABLED:true}
+      facilitator-base-url: ${OKX_X402_FACILITATOR_URL:https://web3.okx.com}
+      token-address: ${X402_TOKEN_ADDRESS:0x779ded0c9e1022225f8e0630b35a9b54be713736}
+      token-name: ${X402_TOKEN_NAME:USD₮0}
+      token-version: ${X402_TOKEN_VERSION:1}
+      network: ${X402_NETWORK:eip155:196}
+      version: ${X402_VERSION:2}
+      max-timeout-seconds: ${X402_MAX_TIMEOUT_SECONDS:600}
+      sync-settle: ${X402_SYNC_SETTLE:true}
+      post-settle-confirm-sleep-ms: ${X402_POST_SETTLE_SLEEP_MS:1000}
   audit:
     name:
       min-length: 2
@@ -166,7 +192,10 @@ chain:
     address: ${OPERATOR_ADDRESS:}
     private-key: ${OPERATOR_PRIVATE_KEY:}
 
-# ── OnchainOS（广播 / 查询交易）────────────────────────────────────────────
+# ── OnchainOS（广播 / 查询交易；同账号同时给 x402 facilitator 提供 HMAC 凭证）─
+# api-key / api-secret / passphrase 同时用于 OnchainOS 自身（broadcast / tx 查询）
+# 以及 nicolas.payment.x402.facilitator-base-url 下的 /api/v6/pay/x402/* 调用。
+# 想激活 x402，把以下三项填上即可：ONCHAINOS_API_KEY / _SECRET / _PASSPHRASE。
 onchainos:
   base-url: ${ONCHAINOS_BASE_URL:https://www.okx.com/api/v5/wallet}
   api-key: ${ONCHAINOS_API_KEY:}

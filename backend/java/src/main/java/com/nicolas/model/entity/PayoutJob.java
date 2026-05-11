@@ -27,6 +27,14 @@ public class PayoutJob {
     @Column(name = "fee_bps", nullable = false)
     private int feeBps;
 
+    /** {@code BPS} = percentage of amount; {@code FIXED} = flat fee covering gas. */
+    @Column(name = "fee_mode", nullable = false, length = 16)
+    private String feeMode = "BPS";
+
+    /** Snapshot of the fixed-fee amount at scheduling time. Only set when {@code feeMode = FIXED}. */
+    @Column(name = "fee_fixed_usdt", precision = 18, scale = 6)
+    private BigDecimal feeFixedUsdt;
+
     @Column(name = "payout_amount", nullable = false, precision = 18, scale = 6)
     private BigDecimal payoutAmount;
 
@@ -76,6 +84,10 @@ public class PayoutJob {
     public void setAmountUsdt(BigDecimal amountUsdt) { this.amountUsdt = amountUsdt; }
     public int getFeeBps() { return feeBps; }
     public void setFeeBps(int feeBps) { this.feeBps = feeBps; }
+    public String getFeeMode() { return feeMode; }
+    public void setFeeMode(String feeMode) { this.feeMode = feeMode; }
+    public BigDecimal getFeeFixedUsdt() { return feeFixedUsdt; }
+    public void setFeeFixedUsdt(BigDecimal feeFixedUsdt) { this.feeFixedUsdt = feeFixedUsdt; }
     public BigDecimal getPayoutAmount() { return payoutAmount; }
     public void setPayoutAmount(BigDecimal payoutAmount) { this.payoutAmount = payoutAmount; }
     public BigDecimal getFeeAmount() { return feeAmount; }

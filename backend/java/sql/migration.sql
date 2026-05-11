@@ -240,3 +240,50 @@ ALTER TABLE payment_orders
     ADD COLUMN tx_nonce BIGINT
         COMMENT '链上 tx 的 nonce（同上）',
     ADD UNIQUE KEY uk_payment_orders_tx_hash (tx_hash);
+
+
+-- [2026-05-11] V009 x402 / OKX Facilitator 支付 + 周结算 + 抽成模式扩展 + 纠纷占位
+-- 流程切换：买家不再贴 tx_hash，前端连 OKX Wallet 签 EIP-712 transferWithAuthorization；
+-- 后端拿 paymentPayload 调 OKX Facilitator /verify + /settle，syncSettle=true 同步落账，
+-- 返回 tx_hash 直接写入订单，再 sleep 1s 自检 receipt 兜底确认（receipt.status=0x1 即"已支付"）。
+-- 抽成扩成两种模式：BPS 按比例（平台赚钱）或 FIXED 固定金额（仅覆盖 gas）。
+-- 结算窗口从 holdback-hours 改成周结算（cutoff 周五 12:00 / payout 周日 12:00–20:00），
+-- 走 settle_pending → settled 终态，避免二次结算。SQL 筛选条件：
+--   已支付(status='paid' 或 'delivered') + 无纠纷(dispute_status IS NULL) + 未结算(settled_at IS NULL)
+-- 纠纷退款不做自动兜底，由 service_provider 人工介入；本块只落 schema 占位。
+
+ALTER TABLE payment_orders
+    ADD COLUMN x402_signer_address VARCHAR(42)
+        COMMENT 'x402 paymentPayload.authorization.from（买家 EIP-712 签名地址）',
+    ADD COLUMN x402_settled_at      DATETIME
+        COMMENT 'OKX /settle 同步返回成功的时刻',
+    ADD COLUMN dispute_status       VARCHAR(16)
+        COMMENT 'NULL=无纠纷; open=买家已开纠纷; resolved=已退款解决; rejected=纠纷被驳回',
+    ADD COLUMN dispute_deadline_at  DATETIME
+        COMMENT '纠纷申诉截止时间（一般 = 下个周五 12:00），过期后订单进入结算队列',
+    ADD COLUMN settled_at           DATETIME
+        COMMENT '商家放款完成的时刻；非空表示该订单已终态结算，防二次结算';
+
+ALTER TABLE payout_jobs
+    ADD COLUMN fee_mode       VARCHAR(16)   NOT NULL DEFAULT 'BPS'
+        COMMENT '抽成模式 BPS=按比例 / FIXED=固定金额（覆盖 gas）',
+    ADD COLUMN fee_fixed_usdt DECIMAL(18,6)
+        COMMENT 'FIXED 模式下的固定抽成金额（USDT）；BPS 模式时为 NULL';
+
+-- 纠纷表（占位，V1 不做自动退款；service_provider 后台人工标记）
+CREATE TABLE IF NOT EXISTS order_disputes (
+    id             BIGINT        NOT NULL AUTO_INCREMENT,
+    order_id       BIGINT        NOT NULL,
+    buyer_id       BIGINT        NOT NULL,
+    reason         TEXT          NOT NULL,
+    status         VARCHAR(16)   NOT NULL DEFAULT 'open'
+                   COMMENT 'open | resolved | rejected',
+    reviewer_id    BIGINT        COMMENT '处理本纠纷的 service_provider user_id',
+    refund_amount  DECIMAL(18,6) COMMENT '若 resolved，记录实际退款金额（人工链下转账或后续合约）',
+    resolved_at    DATETIME,
+    created_at     DATETIME      NOT NULL,
+    updated_at     DATETIME      NOT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_order_disputes_order (order_id),
+    KEY idx_order_disputes_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

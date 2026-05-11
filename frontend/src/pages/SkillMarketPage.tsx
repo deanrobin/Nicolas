@@ -14,7 +14,7 @@ import { App as AntApp } from 'antd'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
 import { marketApi } from '../api/client'
-import ManualPayModal from '../components/ManualPayModal'
+import X402PayModal from '../components/X402PayModal'
 import type { SkillListing, BuySkillResponse } from '../types/api'
 
 const { Title, Text, Paragraph } = Typography
@@ -221,7 +221,7 @@ export default function SkillMarketPage() {
         )}
       </div>
 
-      <ManualPayModal
+      <X402PayModal
         open={buyInfo !== null}
         info={buyInfo}
         kind="skill"

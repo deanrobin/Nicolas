@@ -15,6 +15,7 @@ import type {
   SkillListingRequest,
   UserWallet,
   WalletNonceResponse,
+  X402PaymentPayload,
 } from '../types/api'
 
 const BASE = '/api'
@@ -209,6 +210,18 @@ export const marketApi = {
     request<PaymentOrder>(`/market/orders/${orderId}/submit-tx`, {
       method: 'POST',
       body: JSON.stringify({ txHash }),
+    }),
+
+  /**
+   * x402 / OKX Facilitator settle. Buyer signs an EIP-712
+   * transferWithAuthorization with their OKX Wallet; the resulting
+   * paymentPayload goes here, gets forwarded to OKX /verify + /settle, and
+   * comes back with the order moved to {@code confirming} or {@code paid}.
+   */
+  x402Settle: (orderId: number, paymentPayload: X402PaymentPayload) =>
+    request<PaymentOrder>(`/market/orders/${orderId}/x402-settle`, {
+      method: 'POST',
+      body: JSON.stringify({ paymentPayload }),
     }),
 
   myOrders: () => request<PaymentOrder[]>('/market/orders/mine'),

@@ -2,9 +2,11 @@ package com.nicolas.controller;
 
 import com.alibaba.fastjson2.JSONObject;
 import com.nicolas.config.ChainConfig;
+import com.nicolas.exception.BizException;
 import com.nicolas.model.dto.AgentListingView;
 import com.nicolas.model.dto.ApiResponse;
 import com.nicolas.model.dto.MerchantView;
+import com.nicolas.model.dto.OrderDisputeView;
 import com.nicolas.model.dto.SkillListingView;
 import com.nicolas.repository.AgentListingRepository;
 import com.nicolas.repository.MerchantRepository;
@@ -13,11 +15,16 @@ import com.nicolas.repository.UserRepository;
 import com.nicolas.service.ChainQueryService;
 import com.nicolas.service.MerchantService;
 import com.nicolas.service.OnchainOsClient;
+import com.nicolas.service.OrderDisputeService;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -36,6 +43,7 @@ public class ProviderController {
     private final AgentListingRepository agentRepo;
     private final SkillListingRepository skillRepo;
     private final MerchantService merchantService;
+    private final OrderDisputeService disputeService;
     private final ChainQueryService chain;
     private final ChainConfig chainConfig;
     private final OnchainOsClient onchainOs;
@@ -45,6 +53,7 @@ public class ProviderController {
                            AgentListingRepository agentRepo,
                            SkillListingRepository skillRepo,
                            MerchantService merchantService,
+                           OrderDisputeService disputeService,
                            ChainQueryService chain,
                            ChainConfig chainConfig,
                            OnchainOsClient onchainOs) {
@@ -53,6 +62,7 @@ public class ProviderController {
         this.agentRepo = agentRepo;
         this.skillRepo = skillRepo;
         this.merchantService = merchantService;
+        this.disputeService = disputeService;
         this.chain = chain;
         this.chainConfig = chainConfig;
         this.onchainOs = onchainOs;
@@ -218,5 +228,54 @@ public class ProviderController {
             @PathVariable Long id, @RequestBody ReviewDecision body) {
         return ResponseEntity.ok(ApiResponse.ok(
                 SkillListingView.from(merchantService.rejectSkill(id, body.reason()))));
+    }
+
+    // ── Order disputes (V1: human-resolved, no auto-refund) ──────────────
+
+    /**
+     * List disputes. Pass {@code ?status=open} to focus on the review queue;
+     * omit for the full history.
+     */
+    @GetMapping("/disputes")
+    public ResponseEntity<ApiResponse<List<OrderDisputeView>>> listDisputes(
+            @RequestParam(value = "status", required = false) String status) {
+        List<OrderDisputeView> data = (StringUtils.hasText(status)
+                ? disputeService.listByStatus(status)
+                : disputeService.listAll())
+                .stream().map(OrderDisputeView::from).toList();
+        return ResponseEntity.ok(ApiResponse.ok(data));
+    }
+
+    /** {@code refundAmount} is bookkeeping only — the platform moves money off-band. */
+    public record ResolveDispute(String refundAmount, String note) {}
+
+    @PostMapping("/disputes/{id}/resolve")
+    public ResponseEntity<ApiResponse<OrderDisputeView>> resolveDispute(
+            @AuthenticationPrincipal Long reviewerId,
+            @PathVariable Long id,
+            @RequestBody(required = false) ResolveDispute body) {
+        BigDecimal refund = null;
+        String note = null;
+        if (body != null) {
+            note = body.note();
+            if (StringUtils.hasText(body.refundAmount())) {
+                try {
+                    refund = new BigDecimal(body.refundAmount().trim());
+                } catch (NumberFormatException e) {
+                    throw BizException.badRequest("refundAmount must be a decimal");
+                }
+            }
+        }
+        return ResponseEntity.ok(ApiResponse.ok(
+                OrderDisputeView.from(disputeService.resolve(id, reviewerId, refund, note))));
+    }
+
+    @PostMapping("/disputes/{id}/reject")
+    public ResponseEntity<ApiResponse<OrderDisputeView>> rejectDispute(
+            @AuthenticationPrincipal Long reviewerId,
+            @PathVariable Long id,
+            @RequestBody ReviewDecision body) {
+        return ResponseEntity.ok(ApiResponse.ok(
+                OrderDisputeView.from(disputeService.reject(id, reviewerId, body.reason()))));
     }
 }

@@ -7,6 +7,7 @@ import com.nicolas.exception.BizException;
 import com.nicolas.model.dto.AgentListingView;
 import com.nicolas.model.dto.ApiResponse;
 import com.nicolas.model.dto.OrderDeliverableView;
+import com.nicolas.model.dto.OrderDisputeView;
 import com.nicolas.model.dto.PaymentOrderView;
 import com.nicolas.model.dto.SkillListingView;
 import com.nicolas.model.entity.AgentListing;
@@ -14,6 +15,7 @@ import com.nicolas.model.entity.PaymentOrder;
 import com.nicolas.model.entity.SkillListing;
 import com.nicolas.repository.AgentListingRepository;
 import com.nicolas.repository.SkillListingRepository;
+import com.nicolas.service.OrderDisputeService;
 import com.nicolas.service.PaymentService;
 import com.nicolas.service.SkillFileService;
 import com.nicolas.service.X402PaymentService;
@@ -40,6 +42,7 @@ public class MarketController {
     private final SkillListingRepository skillRepo;
     private final PaymentService paymentService;
     private final X402PaymentService x402Service;
+    private final OrderDisputeService disputeService;
     private final ChainConfig chainConfig;
     private final PaymentConfig paymentConfig;
     private final SkillFileService skillFileService;
@@ -48,6 +51,7 @@ public class MarketController {
                             SkillListingRepository skillRepo,
                             PaymentService paymentService,
                             X402PaymentService x402Service,
+                            OrderDisputeService disputeService,
                             ChainConfig chainConfig,
                             PaymentConfig paymentConfig,
                             SkillFileService skillFileService) {
@@ -55,6 +59,7 @@ public class MarketController {
         this.skillRepo = skillRepo;
         this.paymentService = paymentService;
         this.x402Service = x402Service;
+        this.disputeService = disputeService;
         this.chainConfig = chainConfig;
         this.paymentConfig = paymentConfig;
         this.skillFileService = skillFileService;
@@ -152,6 +157,24 @@ public class MarketController {
         }
         return ResponseEntity.ok(ApiResponse.ok(
                 PaymentOrderView.from(x402Service.settle(userId, id, req.paymentPayload()))));
+    }
+
+    public record OpenDisputeRequest(String reason) {}
+
+    /**
+     * Buyer opens a dispute on a paid order. Blocks the weekly settlement
+     * payout to the merchant until the {@code service_provider} resolves or
+     * rejects it. V1 has no auto-refund — disputed money sits in the platform
+     * wallet pending human review.
+     */
+    @PostMapping("/orders/{id}/dispute")
+    public ResponseEntity<ApiResponse<OrderDisputeView>> openDispute(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long id,
+            @RequestBody OpenDisputeRequest req) {
+        if (req == null) throw BizException.badRequest("Request body required");
+        return ResponseEntity.ok(ApiResponse.ok(
+                OrderDisputeView.from(disputeService.open(userId, id, req.reason()))));
     }
 
     /** Buyer's own orders. */

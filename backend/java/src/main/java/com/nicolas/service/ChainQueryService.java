@@ -127,6 +127,34 @@ public class ChainQueryService {
     }
 
     /**
+     * Diagnostic: dump every ERC-20 Transfer log in the receipt as a flat string
+     * — {@code "token=0x… from=0x… to=0x… amount=12345"} per entry — so the
+     * confirmation job can log it when its strict matcher rejects the receipt.
+     * Useful for catching common mistakes: wrong USDT contract (paymaster
+     * wrapper vs. native USDT), wrong destination, wrong chain, etc.
+     */
+    public String summarizeTransfers(TransactionReceipt receipt) {
+        if (receipt == null) return "(no receipt)";
+        StringBuilder sb = new StringBuilder();
+        int count = 0;
+        for (Log log : receipt.getLogs()) {
+            if (log.getTopics() == null || log.getTopics().size() < 3) continue;
+            if (!ERC20_TRANSFER_TOPIC.equalsIgnoreCase(log.getTopics().get(0))) continue;
+            String token = log.getAddress();
+            String from = topicToAddress(log.getTopics().get(1));
+            String to = topicToAddress(log.getTopics().get(2));
+            BigInteger amount = Numeric.toBigInt(log.getData());
+            if (count > 0) sb.append("; ");
+            sb.append("token=").append(token)
+              .append(" from=").append(from)
+              .append(" to=").append(to)
+              .append(" amount=").append(amount);
+            count++;
+        }
+        return count == 0 ? "(no ERC-20 Transfer logs)" : sb.toString();
+    }
+
+    /**
      * Probe the configured USDT contract for ERC-2612 (`permit`) support.
      * If both {@code DOMAIN_SEPARATOR()} and {@code nonces(address)} respond
      * cleanly, the token is overwhelmingly likely to also expose

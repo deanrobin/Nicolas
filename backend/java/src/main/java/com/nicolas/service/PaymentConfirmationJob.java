@@ -117,8 +117,13 @@ public class PaymentConfirmationJob {
         // wallet for at least the expected amount.
         var transfer = chain.findUsdtTransferTo(receipt, order.getPlatformWalletAddress());
         if (transfer.isEmpty()) {
-            log.warn("Order {} tx {} mined but no USDT transfer to platform wallet {} — leaving in confirming",
-                    order.getId(), order.getTxHash(), order.getPlatformWalletAddress());
+            // Dump every Transfer event in the receipt — almost every "stuck on
+            // confirming" report turns out to be a wrong-contract / wrong-address
+            // user error and the dump tells us which one without a round-trip
+            // to the explorer.
+            log.warn("Order {} tx {} mined but no USDT transfer to platform wallet {} (configured USDT={}). Transfers in receipt: {}",
+                    order.getId(), order.getTxHash(), order.getPlatformWalletAddress(),
+                    chainConfig.getUsdtAddress(), chain.summarizeTransfers(receipt));
             return;
         }
         BigInteger expected = ChainQueryService.toUsdtRaw(order.getAmountUsdt());

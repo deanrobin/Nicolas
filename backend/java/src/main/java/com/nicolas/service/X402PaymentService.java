@@ -123,14 +123,24 @@ public class X402PaymentService {
 
         // 2) OKX /settle — paymaster broadcasts on-chain
         JSONObject settleData = facilitator.settle(paymentPayload, requirements);
-        if (settleData == null || Boolean.FALSE.equals(settleData.getBoolean("success"))) {
-            log.warn("Order {} x402 settle rejected: {}", order.getId(), settleData);
-            throw new BizException(502, "x402 settle failed: " +
-                (settleData != null ? settleData.toString() : "no response"));
+        log.info("Order {} x402 settle response data: {}", order.getId(), settleData);
+        if (settleData == null) {
+            throw new BizException(502, "x402 settle failed: no response");
         }
-        String txHash = settleData.getString("transaction");
+        if (Boolean.FALSE.equals(settleData.getBoolean("success"))) {
+            log.warn("Order {} x402 settle rejected: {}", order.getId(), settleData);
+            throw new BizException(502, "x402 settle failed: " + settleData);
+        }
+        // OKX has shipped the tx hash under several field names across versions;
+        // accept the common variants instead of failing on a successful settle just
+        // because the field was renamed.
+        String txHash = firstHashField(settleData,
+                "transaction", "txHash", "tx_hash", "transactionHash", "hash");
         if (!StringUtils.hasText(txHash)) {
-            throw new BizException(502, "x402 settle returned no tx hash");
+            log.error("Order {} x402 settle returned no tx hash. Full response: {}",
+                    order.getId(), settleData);
+            throw new BizException(502,
+                "x402 settle returned no tx hash. OKX response: " + settleData);
         }
 
         // 3) Record the tx + flip to confirming. Persist before sleeping so a
@@ -224,6 +234,15 @@ public class X402PaymentService {
         if (StringUtils.hasText(authValue) && !authValue.equals(req.get("amount"))) {
             throw BizException.badRequest("paymentPayload value does not match order amount");
         }
+    }
+
+    /** First non-blank value from any of {@code keys} in {@code data}, or {@code ""}. */
+    private static String firstHashField(JSONObject data, String... keys) {
+        for (String k : keys) {
+            String v = data.getString(k);
+            if (StringUtils.hasText(v)) return v;
+        }
+        return "";
     }
 
     /** Pull {@code paymentPayload.payload.authorization.from}, or empty string. */

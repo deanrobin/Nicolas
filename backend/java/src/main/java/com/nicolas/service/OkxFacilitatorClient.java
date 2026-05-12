@@ -111,7 +111,14 @@ public class OkxFacilitatorClient {
         String sign = base64HmacSha256(apiSecret, timestamp + "POST" + path + bodyJson);
 
         try {
-            JSONObject raw = client.post()
+            // Read as String, then JSON.parseObject — bodyToMono(JSONObject.class)
+            // would route through Spring's default WebClient codec (Jackson, since
+            // FastJsonHttpMessageConverter is only registered with Spring MVC, not
+            // WebClient). Jackson's MapDeserializer materialises nested objects as
+            // plain LinkedHashMap, so subsequent `data instanceof JSONObject` checks
+            // silently fail and we lose every nested field. Parsing via FastJSON2
+            // explicitly guarantees JSONObject all the way down the tree.
+            String raw = client.post()
                     .uri(path)
                     .header("OK-ACCESS-KEY",        apiKey)
                     .header("OK-ACCESS-SIGN",       sign)
@@ -120,19 +127,29 @@ public class OkxFacilitatorClient {
                     .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
                     .bodyValue(bodyJson)
                     .retrieve()
-                    .bodyToMono(JSONObject.class)
+                    .bodyToMono(String.class)
                     .block();
 
-            if (raw == null) {
+            if (!StringUtils.hasText(raw)) {
                 throw new BizException(502, "OKX " + path + " returned no body");
             }
-            String code = raw.getString("code");
-            if (code != null && !"0".equals(code)) {
-                log.warn("OKX {} returned non-zero code: {}", path, raw);
+            log.info("OKX {} response: {}", path, raw);
+
+            JSONObject parsed;
+            try {
+                parsed = JSON.parseObject(raw);
+            } catch (Exception parseErr) {
                 throw new BizException(502,
-                    "OKX " + path + " error: code=" + code + " msg=" + raw.getString("msg"));
+                    "OKX " + path + " returned non-JSON body: " + truncate(raw));
             }
-            return extractDataObject(raw);
+
+            String code = parsed.getString("code");
+            if (code != null && !"0".equals(code)) {
+                log.warn("OKX {} returned non-zero code: {}", path, parsed);
+                throw new BizException(502,
+                    "OKX " + path + " error: code=" + code + " msg=" + parsed.getString("msg"));
+            }
+            return extractDataObject(parsed);
         } catch (WebClientResponseException e) {
             int status = e.getStatusCode().value();
             log.warn("OKX {} HTTP {}: {}", path, status, e.getResponseBodyAsString());
@@ -141,15 +158,40 @@ public class OkxFacilitatorClient {
         }
     }
 
-    /** OKX wraps payloads as either {@code data: {...}} or {@code data: [{...}]}. */
+    /**
+     * OKX wraps payloads as {@code data: {...}} or {@code data: [{...}]}. Tolerates
+     * raw {@link Map} / {@link java.util.List} forms in case the response slipped
+     * past the FastJSON2 parse path (e.g. a third party patches the codec).
+     */
     private static JSONObject extractDataObject(JSONObject raw) {
         Object data = raw.get("data");
         if (data instanceof JSONObject obj) return obj;
+        if (data instanceof Map<?, ?> map) return new JSONObject((Map<String, Object>) coerceMap(map));
         if (data instanceof JSONArray arr && !arr.isEmpty()) {
             Object first = arr.get(0);
             if (first instanceof JSONObject obj2) return obj2;
+            if (first instanceof Map<?, ?> firstMap) {
+                return new JSONObject((Map<String, Object>) coerceMap(firstMap));
+            }
+        }
+        if (data instanceof java.util.List<?> list && !list.isEmpty()) {
+            Object first = list.get(0);
+            if (first instanceof JSONObject obj3) return obj3;
+            if (first instanceof Map<?, ?> firstMap) {
+                return new JSONObject((Map<String, Object>) coerceMap(firstMap));
+            }
         }
         return new JSONObject();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> coerceMap(Map<?, ?> m) {
+        return (Map<String, Object>) m;
+    }
+
+    private static String truncate(String s) {
+        if (s == null) return "";
+        return s.length() > 500 ? s.substring(0, 500) + "…" : s;
     }
 
     private static String base64HmacSha256(String secret, String prehash) {

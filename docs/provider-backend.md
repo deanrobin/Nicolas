@@ -18,14 +18,15 @@ Nicolas 平台一共有 4 种用户角色（`users.role` 字段）：
 | **`service_provider`** | **服务商 / 平台运营方** | **全系统恰好 1 个** |
 
 服务商**不是**卖家，**也不是**买家 —— 他是托管市场的中间方：
-- 持有平台运营方钱包（即**平台收款钱包**，地址 + 私钥）
-- V1：通过 Java Job 管理平台钱包收款、资金锁定、放款 / 退款
-- V2（升级后）：操作 `NicolasEscrowV2` 合约（暂停、白名单、仲裁、调费率…）
+- 持有平台运营方钱包（即 **x402 入账的 `payTo` 平台收款钱包** + **operator 放款钱包**）
+- V1：x402 收账（OKX Facilitator + paymaster）+ Java DB Ledger + Operator 钱包 Job 放款 / 退款
+- V2（升级后）：操作 `NicolasEscrowV2` 合约（暂停、白名单、仲裁、调费率…）；x402 入账侧仍可保留
 - 看平台统计数据 / 链上余额
-- 管理支付订单、资金流水、payout_job、纠纷裁决
-- 通过 OnchainOS 广播交易
+- 管理支付订单、x402 settle 审计、资金流水、payout_job、纠纷裁决
+- 通过 OnchainOS 广播交易；通过 OKX Facilitator 完成 x402 verify+settle
 
 > "管理员"和"运营方钱包"在 Nicolas 里是**同一个身份** —— 都叫服务商。
+> OKX Facilitator 凭证（`ONCHAINOS_API_KEY/_SECRET/_PASSPHRASE`）也属于服务商持有。
 
 ---
 
@@ -69,34 +70,54 @@ Nicolas 平台一共有 4 种用户角色（`users.role` 字段）：
 |---|---|---|
 | `XLAYER_RPC_URL` | `https://rpc.xlayer.tech` | XLayer JSON-RPC |
 | `XLAYER_CHAIN_ID` | `196` | 196 = 主网，195 = 测试网 |
-| `XLAYER_USDT_ADDRESS` | (主网 USDT) | XLayer 上 USDT ERC-20 |
+| `XLAYER_USDT_ADDRESS` | (主网 USDT) | XLayer 上标准 USDT ERC-20（Legacy 兜底路径用） |
+| `CHAIN_XLAYER_USDT_GASFREE_ADDRESS` | `0x779ded…713736` | OKX GasFree paymaster wrapper（x402 主流程用） |
 
-### V1 平台钱包托管（当前 Demo 方案）
+### V1 = x402 入账 + 平台钱包托管 + Operator 放款（当前 Demo 方案）
 
 | Key | 说明 |
 |---|---|
 | `PAYMENT_MODE` | `PLATFORM_WALLET`（V1）或 `CONTRACT`（V2） |
-| `PLATFORM_WALLET_ADDRESS` | 平台收款钱包公开地址（即 `OPERATOR_ADDRESS`） |
-| `PLATFORM_WALLET_PRIVATE_KEY` | **机密** 平台收款钱包私钥（用于 Job 放款） |
+| `PLATFORM_WALLET_ADDRESS` | 平台收款钱包公开地址（**即 x402 `payTo`**） |
+| `PLATFORM_WALLET_PRIVATE_KEY` | **机密** 平台收款钱包私钥（备用） |
+| `OPERATOR_ADDRESS` | 运营方钱包公开地址（卖家放款执行钱包；V2 同时是合约 owner） |
+| `OPERATOR_PRIVATE_KEY` | **机密** Operator 私钥（V1：`payout_execute_job` 链上转账；V2：合约 owner/arbitrator） |
 | `PAYOUT_JOB_ENABLED` | `true` 启用放款 Job |
-| `DEPOSIT_VERIFY_MIN_CONFIRMATIONS` | 入账最小确认数（建议 12） |
+| `NICOLAS_PAYMENT_CONFIRMATION_BLOCKS` | x402 入账最小确认数（默认 3，XLayer 块时间 ~1s） |
+| `NICOLAS_PAYMENT_SETTLEMENT_CUTOFF_CRON` | 周结 cutoff cron（默认 `0 0 12 * * FRI`） |
+| `NICOLAS_PAYMENT_SETTLEMENT_PAYOUT_CRON` | 周结 payout cron（默认 `0 0 12 * * SUN`） |
+| `NICOLAS_PAYMENT_SETTLEMENT_PAYOUT_WINDOW_HOURS` | 周结放款 drip 窗口（默认 8） |
+
+### x402 / OKX Facilitator（V1 主流程**必填**）
+
+| Key | 默认 | 说明 |
+|---|---|---|
+| `NICOLAS_PAYMENT_X402_ENABLED` | `true` | 关闭则后端不在 buy 响应里附带 x402 challenge，前端走 Legacy submit-tx |
+| `NICOLAS_PAYMENT_X402_FACILITATOR_BASE_URL` | `https://web3.okx.com` | OKX Facilitator 根地址 |
+| `NICOLAS_PAYMENT_X402_TOKEN_ADDRESS` | `0x779ded…713736` | EIP-3009 paymaster wrapper |
+| `NICOLAS_PAYMENT_X402_NETWORK` | `eip155:196` | x402 CAIP-2 network |
+| `NICOLAS_PAYMENT_X402_VERSION` | `2` | x402 协议版本字段 |
+| `NICOLAS_PAYMENT_X402_SYNC_SETTLE` | `true` | OKX `/settle` 阻塞到上链确认才返回 |
+| `NICOLAS_PAYMENT_X402_MAX_TIMEOUT_SECONDS` | `600` | EIP-3009 typed-data `validBefore` 窗口 |
+| `NICOLAS_PAYMENT_X402_POST_SETTLE_CONFIRM_SLEEP_MS` | `1000` | settle 后独立 receipt 校验前 sleep |
 
 ### V2 合约托管（升级路径，暂不需要）
 
 | Key | 说明 |
 |---|---|
 | `ESCROW_CONTRACT_ADDRESS` | 已部署的 `NicolasEscrowV2` 地址（V2 需要） |
-| `OPERATOR_ADDRESS` | 服务商钱包公开地址（需与该唯一服务商账号绑定） |
-| `OPERATOR_PRIVATE_KEY` | **机密** 服务商私钥，V2 合约 owner/arbitrator 操作（hex，可带 `0x`） |
+| `OPERATOR_ADDRESS` / `OPERATOR_PRIVATE_KEY` | 同 V1，V2 中作为合约 owner/arbitrator 签名 |
 
-### OnchainOS（OKX Wallet API）
+### OnchainOS（OKX Wallet API）+ x402 凭证
+
+OnchainOS 与 x402 共用同一组 OKX OnchainOS 账号凭证。**x402 主流程必填三项**。
 
 | Key | 说明 |
 |---|---|
-| `ONCHAINOS_BASE_URL` | OnchainOS / OKX Wallet base URL |
-| `ONCHAINOS_API_KEY` | **机密** `OK-ACCESS-KEY` |
-| `ONCHAINOS_API_SECRET` | **机密** HMAC 签名密钥 |
-| `ONCHAINOS_PASSPHRASE` | **机密** `OK-ACCESS-PASSPHRASE` |
+| `ONCHAINOS_BASE_URL` | OnchainOS base URL（broadcast / tx 查询用） |
+| `ONCHAINOS_API_KEY` | **机密** `OK-ACCESS-KEY`（x402 verify+settle 必填） |
+| `ONCHAINOS_API_SECRET` | **机密** HMAC-SHA256 签名密钥（x402 verify+settle 必填） |
+| `ONCHAINOS_PASSPHRASE` | **机密** `OK-ACCESS-PASSPHRASE`（x402 verify+settle 必填） |
 | `ONCHAINOS_PROJECT_ID` | `OK-ACCESS-PROJECT` |
 
 ### 部署示例（systemd EnvironmentFile）
@@ -105,16 +126,28 @@ Nicolas 平台一共有 4 种用户角色（`users.role` 字段）：
 XLAYER_RPC_URL=https://rpc.xlayer.tech
 XLAYER_CHAIN_ID=196
 XLAYER_USDT_ADDRESS=0x1E4a5963aBFD975d8c9021ce480b42188849D41d
+CHAIN_XLAYER_USDT_GASFREE_ADDRESS=0x779ded0c9e1022225f8e0630b35a9b54be713736
 
-ESCROW_CONTRACT_ADDRESS=0x...
+PAYMENT_MODE=PLATFORM_WALLET
+PLATFORM_WALLET_ADDRESS=0x...
+PLATFORM_WALLET_PRIVATE_KEY=0x...
 OPERATOR_ADDRESS=0x...
 OPERATOR_PRIVATE_KEY=0x...
+PAYOUT_JOB_ENABLED=true
+
+NICOLAS_PAYMENT_X402_ENABLED=true
+NICOLAS_PAYMENT_X402_FACILITATOR_BASE_URL=https://web3.okx.com
+NICOLAS_PAYMENT_X402_TOKEN_ADDRESS=0x779ded0c9e1022225f8e0630b35a9b54be713736
+NICOLAS_PAYMENT_X402_NETWORK=eip155:196
+NICOLAS_PAYMENT_X402_SYNC_SETTLE=true
 
 ONCHAINOS_BASE_URL=https://www.okx.com/api/v5/wallet
 ONCHAINOS_API_KEY=...
 ONCHAINOS_API_SECRET=...
 ONCHAINOS_PASSPHRASE=...
 ONCHAINOS_PROJECT_ID=...
+
+ESCROW_CONTRACT_ADDRESS=0x...   # V2 才需要
 ```
 
 ---
@@ -173,8 +206,9 @@ GET /provider/stats
 
 | 接口 | 说明 |
 |---|---|
-| `GET  /provider/wallet/info` | 平台钱包地址、余额、链上配置 |
-| `GET  /provider/payments/orders` | 所有 payment_order 及状态 |
+| `GET  /provider/wallet/info` | 平台钱包 / Operator 钱包地址、余额、链上配置、x402 状态 |
+| `GET  /provider/payments/orders` | 所有 payment_order 及状态（含 x402_signer / tx_hash） |
+| `GET  /provider/payments/orders/{id}/x402-trace` | 单笔订单的 x402 verify/settle 审计明细 |
 | `GET  /provider/payout-jobs` | 放款 / 退款任务列表及状态 |
 | `POST /provider/payout-jobs/{id}/retry` | 手动触发重试失败 Job |
 | `GET  /provider/disputes` | 所有纠纷案例及 Agent 建议 |

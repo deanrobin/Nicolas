@@ -325,6 +325,48 @@ public class MerchantService {
         return skillRepo.findByStatusInOrderByCreatedAtAsc(REVIEW_QUEUE_STATUSES);
     }
 
+    // ── Status-filtered queries for the provider dashboard "history" tabs ──
+    // `filter` accepts:
+    //   null / blank / "queue"  → pending + needs_human (the live review queue)
+    //   "all"                   → every status, newest first
+    //   any other status string → that single status, newest first
+
+    public List<Merchant> listMerchantsForAdmin(String filter) {
+        if (filter == null || filter.isBlank() || "queue".equalsIgnoreCase(filter)) {
+            return getReviewQueueMerchants();
+        }
+        if ("all".equalsIgnoreCase(filter)) {
+            return merchantRepo.findAll(
+                    org.springframework.data.domain.Sort.by(
+                            org.springframework.data.domain.Sort.Direction.DESC, "createdAt"));
+        }
+        return merchantRepo.findByStatusOrderByCreatedAtDesc(filter);
+    }
+
+    public List<AgentListing> listAgentsForAdmin(String filter) {
+        if (filter == null || filter.isBlank() || "queue".equalsIgnoreCase(filter)) {
+            return getReviewQueueAgents();
+        }
+        if ("all".equalsIgnoreCase(filter)) {
+            return agentRepo.findAll(
+                    org.springframework.data.domain.Sort.by(
+                            org.springframework.data.domain.Sort.Direction.DESC, "createdAt"));
+        }
+        return agentRepo.findByStatusOrderByCreatedAtDesc(filter);
+    }
+
+    public List<SkillListing> listSkillsForAdmin(String filter) {
+        if (filter == null || filter.isBlank() || "queue".equalsIgnoreCase(filter)) {
+            return getReviewQueueSkills();
+        }
+        if ("all".equalsIgnoreCase(filter)) {
+            return skillRepo.findAll(
+                    org.springframework.data.domain.Sort.by(
+                            org.springframework.data.domain.Sort.Direction.DESC, "createdAt"));
+        }
+        return skillRepo.findByStatusOrderByCreatedAtDesc(filter);
+    }
+
     @Transactional
     public Merchant approveMerchant(Long id) {
         Merchant m = merchantRepo.findById(id)

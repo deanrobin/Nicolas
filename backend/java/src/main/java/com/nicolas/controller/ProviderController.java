@@ -181,22 +181,31 @@ public class ProviderController {
 
     // ── Review queue (pending + needs_human) ─────────────────────────────
 
+    /**
+     * Optional {@code ?status=} filter for the admin's review tabs:
+     *   omitted / blank / {@code queue} → live queue (pending + needs_human)
+     *   {@code all}                     → all statuses, newest first (full history)
+     *   {@code pending|approved|rejected|needs_human|init} → that single bucket
+     */
     @GetMapping("/review/merchants")
-    public ResponseEntity<ApiResponse<java.util.List<MerchantView>>> reviewMerchants() {
+    public ResponseEntity<ApiResponse<java.util.List<MerchantView>>> reviewMerchants(
+            @RequestParam(value = "status", required = false) String status) {
         return ResponseEntity.ok(ApiResponse.ok(
-                merchantService.getReviewQueueMerchants().stream().map(MerchantView::from).toList()));
+                merchantService.listMerchantsForAdmin(status).stream().map(MerchantView::from).toList()));
     }
 
     @GetMapping("/review/agents")
-    public ResponseEntity<ApiResponse<java.util.List<AgentListingView>>> reviewAgents() {
+    public ResponseEntity<ApiResponse<java.util.List<AgentListingView>>> reviewAgents(
+            @RequestParam(value = "status", required = false) String status) {
         return ResponseEntity.ok(ApiResponse.ok(
-                merchantService.getReviewQueueAgents().stream().map(AgentListingView::from).toList()));
+                merchantService.listAgentsForAdmin(status).stream().map(AgentListingView::from).toList()));
     }
 
     @GetMapping("/review/skills")
-    public ResponseEntity<ApiResponse<java.util.List<SkillListingView>>> reviewSkills() {
+    public ResponseEntity<ApiResponse<java.util.List<SkillListingView>>> reviewSkills(
+            @RequestParam(value = "status", required = false) String status) {
         return ResponseEntity.ok(ApiResponse.ok(
-                merchantService.getReviewQueueSkills().stream().map(SkillListingView::from).toList()));
+                merchantService.listSkillsForAdmin(status).stream().map(SkillListingView::from).toList()));
     }
 
     // ── Approve / Reject ─────────────────────────────────────────────────

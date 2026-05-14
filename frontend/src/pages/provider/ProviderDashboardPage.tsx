@@ -83,6 +83,17 @@ function RejectModal({
 
 type RejectTarget = { type: 'merchant' | 'agent' | 'skill'; id: number }
 
+/** Status filter shown above each review tab. Backend translates 'queue' to
+ *  pending + needs_human, 'all' to every status, and the others to themselves. */
+type ReviewFilter = 'queue' | 'all' | 'approved' | 'rejected'
+
+const FILTER_OPTIONS: Array<{ label: string; value: ReviewFilter }> = [
+  { label: '待审 / Queue',      value: 'queue' },
+  { label: '已通过 / Approved', value: 'approved' },
+  { label: '已驳回 / Rejected', value: 'rejected' },
+  { label: '全部 / All',        value: 'all' },
+]
+
 export default function ProviderDashboardPage() {
   const { message } = AntApp.useApp()
   const [stats, setStats] = useState<ProviderStats | null>(null)
@@ -92,6 +103,13 @@ export default function ProviderDashboardPage() {
   const [disputes, setDisputes] = useState<OrderDispute[]>([])
   const [reviews, setReviews] = useState<Review[]>([])
   const [reviewFilter, setReviewFilter] = useState<'all' | 'visible' | 'hidden'>('all')
+  // Per-tab status filter for merchants / agents / skills. Default 'queue' is
+  // the historical behavior (pending + needs_human). The other buckets let
+  // the admin look back at decisions they already made — previously these
+  // rows vanished from the dashboard the moment they were approved/rejected.
+  const [merchantFilter, setMerchantFilter] = useState<ReviewFilter>('queue')
+  const [agentFilter, setAgentFilter] = useState<ReviewFilter>('queue')
+  const [skillFilter, setSkillFilter] = useState<ReviewFilter>('queue')
   const [loading, setLoading] = useState(true)
   const [acting, setActing] = useState(false)
   const [rejectTarget, setRejectTarget] = useState<RejectTarget | null>(null)
@@ -102,9 +120,9 @@ export default function ProviderDashboardPage() {
     try {
       const [s, ms, as, ss, ds, rs] = await Promise.all([
         providerApi.stats(),
-        providerApi.reviewMerchants(),
-        providerApi.reviewAgents(),
-        providerApi.reviewSkills(),
+        providerApi.reviewMerchants(merchantFilter),
+        providerApi.reviewAgents(agentFilter),
+        providerApi.reviewSkills(skillFilter),
         providerApi.listDisputes(),
         providerApi.listReviews(),
       ])
@@ -118,6 +136,33 @@ export default function ProviderDashboardPage() {
       message.error(err instanceof Error ? err.message : 'Failed to load')
     } finally {
       setLoading(false)
+    }
+  }, [message, merchantFilter, agentFilter, skillFilter])
+
+  // Per-tab reloaders — used when the user switches Segmented filters,
+  // so we only re-hit the one endpoint that needs new data instead of
+  // refetching everything (stats / disputes / reviews stay put).
+  const reloadMerchants = useCallback(async (next: ReviewFilter) => {
+    try {
+      setMerchants(await providerApi.reviewMerchants(next))
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : 'Failed to load merchants')
+    }
+  }, [message])
+
+  const reloadAgents = useCallback(async (next: ReviewFilter) => {
+    try {
+      setAgents(await providerApi.reviewAgents(next))
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : 'Failed to load agents')
+    }
+  }, [message])
+
+  const reloadSkills = useCallback(async (next: ReviewFilter) => {
+    try {
+      setSkills(await providerApi.reviewSkills(next))
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : 'Failed to load skills')
     }
   }, [message])
 
@@ -556,15 +601,21 @@ export default function ProviderDashboardPage() {
 
   return (
     <div style={{ maxWidth: 1300, margin: '0 auto', padding: '32px 24px' }}>
-      <Title level={3}>
-        <ShopOutlined style={{ marginRight: 8 }} />
+      {/* Title and Refresh sit directly on the dark AppLayout canvas —
+          give them parchment + gold so they don't disappear into the
+          background the way the previous AntD-default rendering did. */}
+      <Title
+        level={3}
+        style={{ color: 'var(--parchment)', display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}
+      >
+        <ShopOutlined style={{ marginRight: 8, color: 'var(--gold)' }} />
         Platform Admin
         <Button
           type="text"
           size="small"
           icon={<SyncOutlined />}
           onClick={load}
-          style={{ marginLeft: 12 }}
+          style={{ marginLeft: 12, color: 'var(--gold-soft)' }}
         >
           Refresh
         </Button>
@@ -624,80 +675,109 @@ export default function ProviderDashboardPage() {
           {
             key: 'merchants',
             label: (
-              <span>
-                <ShopOutlined />
+              <span style={{ color: 'var(--parchment)' }}>
+                <ShopOutlined style={{ marginRight: 4 }} />
                 Merchants{' '}
-                <Badge count={merchants.length} showZero color={merchants.length ? '#fa8c16' : '#d9d9d9'} />
+                <span style={{ color: 'var(--gold)', fontWeight: 600 }}>
+                  ({merchants.length})
+                </span>
               </span>
             ),
             children: (
-              <Table
-                rowKey="id"
-                columns={merchantCols}
-                dataSource={merchants}
-                pagination={false}
-                size="middle"
-                scroll={{ x: 1100 }}
-                locale={{ emptyText: 'No merchants in review queue' }}
-                rowClassName={r => r.status === 'needs_human' ? 'row-needs-human' : ''}
-              />
+              <>
+                <ReviewFilterBar
+                  value={merchantFilter}
+                  onChange={(v) => { setMerchantFilter(v); void reloadMerchants(v) }}
+                />
+                <Table
+                  rowKey="id"
+                  columns={merchantCols}
+                  dataSource={merchants}
+                  pagination={false}
+                  size="middle"
+                  scroll={{ x: 1100 }}
+                  locale={{ emptyText: emptyLabel(merchantFilter, 'merchants') }}
+                  rowClassName={r => r.status === 'needs_human' ? 'row-needs-human' : ''}
+                />
+              </>
             ),
           },
           {
             key: 'agents',
             label: (
-              <span>
-                <AppstoreOutlined />
+              <span style={{ color: 'var(--parchment)' }}>
+                <AppstoreOutlined style={{ marginRight: 4 }} />
                 Agents{' '}
-                <Badge count={agents.length} showZero color={agents.length ? '#fa8c16' : '#d9d9d9'} />
+                <span style={{ color: 'var(--gold)', fontWeight: 600 }}>
+                  ({agents.length})
+                </span>
               </span>
             ),
             children: (
-              <Table
-                rowKey="id"
-                columns={agentCols}
-                dataSource={agents}
-                pagination={false}
-                size="middle"
-                scroll={{ x: 1100 }}
-                locale={{ emptyText: 'No agents in review queue' }}
-                rowClassName={r => r.status === 'needs_human' ? 'row-needs-human' : ''}
-              />
+              <>
+                <ReviewFilterBar
+                  value={agentFilter}
+                  onChange={(v) => { setAgentFilter(v); void reloadAgents(v) }}
+                />
+                <Table
+                  rowKey="id"
+                  columns={agentCols}
+                  dataSource={agents}
+                  pagination={false}
+                  size="middle"
+                  scroll={{ x: 1100 }}
+                  locale={{ emptyText: emptyLabel(agentFilter, 'agents') }}
+                  rowClassName={r => r.status === 'needs_human' ? 'row-needs-human' : ''}
+                />
+              </>
             ),
           },
           {
             key: 'skills',
             label: (
-              <span>
-                <ShoppingOutlined />
+              <span style={{ color: 'var(--parchment)' }}>
+                <ShoppingOutlined style={{ marginRight: 4 }} />
                 Skills{' '}
-                <Badge count={skills.length} showZero color={skills.length ? '#fa8c16' : '#d9d9d9'} />
+                <span style={{ color: 'var(--gold)', fontWeight: 600 }}>
+                  ({skills.length})
+                </span>
               </span>
             ),
             children: (
-              <Table
-                rowKey="id"
-                columns={skillCols}
-                dataSource={skills}
-                pagination={false}
-                size="middle"
-                scroll={{ x: 1100 }}
-                locale={{ emptyText: 'No skills in review queue' }}
-                rowClassName={r => r.status === 'needs_human' ? 'row-needs-human' : ''}
-              />
+              <>
+                <ReviewFilterBar
+                  value={skillFilter}
+                  onChange={(v) => { setSkillFilter(v); void reloadSkills(v) }}
+                />
+                <Table
+                  rowKey="id"
+                  columns={skillCols}
+                  dataSource={skills}
+                  pagination={false}
+                  size="middle"
+                  scroll={{ x: 1100 }}
+                  locale={{ emptyText: emptyLabel(skillFilter, 'skills') }}
+                  rowClassName={r => r.status === 'needs_human' ? 'row-needs-human' : ''}
+                />
+              </>
             ),
           },
           {
             key: 'disputes',
             label: (
-              <span>
-                <WarningOutlined />
+              <span style={{ color: 'var(--parchment)' }}>
+                <WarningOutlined style={{ marginRight: 4 }} />
                 Disputes{' '}
-                <Badge
-                  count={disputes.filter((d) => d.status === 'open').length}
-                  showZero
-                  color={disputes.some((d) => d.status === 'open') ? '#fa541c' : '#d9d9d9'}
-                />
+                <span
+                  style={{
+                    color: disputes.some((d) => d.status === 'open')
+                      ? 'var(--ember)'
+                      : 'var(--gold)',
+                    fontWeight: 600,
+                  }}
+                >
+                  ({disputes.filter((d) => d.status === 'open').length})
+                </span>
               </span>
             ),
             children: (
@@ -724,10 +804,12 @@ export default function ProviderDashboardPage() {
           {
             key: 'reviews',
             label: (
-              <span>
-                <StarOutlined />
+              <span style={{ color: 'var(--parchment)' }}>
+                <StarOutlined style={{ marginRight: 4 }} />
                 Reviews{' '}
-                <Badge count={reviews.length} showZero color={reviews.length ? '#1677ff' : '#d9d9d9'} />
+                <span style={{ color: 'var(--gold)', fontWeight: 600 }}>
+                  ({reviews.length})
+                </span>
               </span>
             ),
             children: (
@@ -957,4 +1039,43 @@ function RejectDisputeModal({
       />
     </Modal>
   )
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Small UI helpers for the review history feature
+// ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Row of pills above each review table that lets the admin switch between
+ * the live queue and historical buckets (approved / rejected / all).
+ * Defaults to 'queue' which is the page's original behavior.
+ */
+function ReviewFilterBar({
+  value,
+  onChange,
+}: {
+  value: ReviewFilter
+  onChange: (next: ReviewFilter) => void
+}) {
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <Segmented
+        value={value}
+        onChange={(v) => onChange(v as ReviewFilter)}
+        options={FILTER_OPTIONS}
+      />
+    </div>
+  )
+}
+
+/**
+ * Empty-state message that adapts to the current filter so the admin
+ * understands "nothing here" in context: a fresh queue vs an empty
+ * history bucket are different things.
+ */
+function emptyLabel(filter: ReviewFilter, what: 'merchants' | 'agents' | 'skills'): string {
+  if (filter === 'queue') return `No ${what} in review queue`
+  if (filter === 'approved') return `No approved ${what} yet`
+  if (filter === 'rejected') return `No rejected ${what} yet`
+  return `No ${what} found`
 }

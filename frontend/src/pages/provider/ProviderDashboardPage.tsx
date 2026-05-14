@@ -943,8 +943,7 @@ function RejectDisputeModal({
       destroyOnClose
     >
       <Paragraph type="secondary" style={{ fontSize: 13 }}>
-        Rejecting the dispute restores the order to settle-eligible — the seller will be paid
-        in the next weekly payout. The reason is recorded on the dispute for the buyer's audit.
+        驳回申诉后，订单会恢复到可结算状态——卖家会在下一次周结时被放款。驳回理由会留在申诉记录里供买家追溯。
       </Paragraph>
       <Input.TextArea
         rows={4}

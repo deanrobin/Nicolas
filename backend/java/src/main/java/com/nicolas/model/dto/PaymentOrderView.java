@@ -25,10 +25,15 @@ public record PaymentOrderView(
         String txFromAddress,
         Long txNonce,
         String note,
+        /** {@code null | open | resolved | rejected} — surfaced so the buyer UI can show dispute state. */
+        String disputeStatus,
+        /** True when the buyer has already submitted a review for this order. */
+        boolean hasReview,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
 ) {
-    public static PaymentOrderView from(PaymentOrder o) {
+    /** Use when the caller already knows {@code hasReview} (e.g. buyer's own orders). */
+    public static PaymentOrderView from(PaymentOrder o, boolean hasReview) {
         return new PaymentOrderView(
                 o.getId(),
                 o.getOrderType(),
@@ -43,8 +48,15 @@ public record PaymentOrderView(
                 o.getTxFromAddress(),
                 o.getTxNonce(),
                 o.getNote(),
+                o.getDisputeStatus(),
+                hasReview,
                 o.getCreatedAt(),
                 o.getUpdatedAt()
         );
+    }
+
+    /** Convenience for endpoints that don't need review state (e.g. post-payment responses). */
+    public static PaymentOrderView from(PaymentOrder o) {
+        return from(o, false);
     }
 }

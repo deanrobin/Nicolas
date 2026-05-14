@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Card, Col, Row, Tag, Typography, Button, Space, Badge, Spin, Empty } from 'antd'
+import { Card, Col, Row, Tag, Typography, Button, Space, Badge, Spin, Empty, Rate } from 'antd'
 import {
   StarFilled,
   ThunderboltOutlined,
@@ -194,6 +194,20 @@ export default function AgentMarketPage() {
                           ))}
                         </div>
                       )}
+
+                      <div style={{ marginBottom: 8, fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {agent.averageRating != null ? (
+                          <>
+                            <Rate disabled allowHalf value={Number(agent.averageRating)} style={{ fontSize: 12 }} />
+                            <Text strong style={{ fontSize: 12 }}>{agent.averageRating}</Text>
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                              · {agent.reviewCount} review{agent.reviewCount === 1 ? '' : 's'}
+                            </Text>
+                          </>
+                        ) : (
+                          <Text type="secondary" style={{ fontSize: 12 }}>No reviews yet</Text>
+                        )}
+                      </div>
 
                       <div style={styles.cardFooter}>
                         <div>

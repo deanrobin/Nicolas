@@ -88,6 +88,10 @@ export interface AgentListing {
   reviewedAt: string | null
   createdAt: string
   updatedAt: string
+  /** 2-decimal string, or null when no buyer reviews. */
+  averageRating: string | null
+  /** Visible buyer reviews count. */
+  reviewCount: number
 }
 
 export interface SkillListing {
@@ -107,6 +111,10 @@ export interface SkillListing {
   reviewedAt: string | null
   createdAt: string
   updatedAt: string
+  /** 2-decimal string, or null when no buyer reviews. */
+  averageRating: string | null
+  /** Visible buyer reviews count. */
+  reviewCount: number
 }
 
 export interface MerchantRegisterRequest {
@@ -152,7 +160,11 @@ export type OrderStatus =
   | 'confirming'
   | 'paid'
   | 'delivered'
+  | 'confirmed'
   | 'refunded'
+
+/** null = no dispute filed; otherwise one of the three lifecycle states. */
+export type DisputeStatus = null | 'open' | 'resolved' | 'rejected'
 
 export interface PaymentOrder {
   id: number
@@ -168,8 +180,30 @@ export interface PaymentOrder {
   txFromAddress: string | null
   txNonce: number | null
   note: string | null
+  disputeStatus: DisputeStatus
+  /** True when the buyer has already submitted a review for this order. */
+  hasReview: boolean
   createdAt: string
   updatedAt: string
+}
+
+// ── Reviews (issue #69 feedback mechanism) ────────────────────────────────
+export interface Review {
+  id: number
+  orderId: number
+  listingType: 'AGENT' | 'SKILL'
+  listingId: number
+  buyerId: number
+  rating: number       // 1..5
+  comment: string | null
+  status: 'visible' | 'hidden'
+  createdAt: string
+  updatedAt: string
+}
+
+export interface SubmitReviewRequest {
+  rating: number       // 1..5
+  comment?: string
 }
 
 export interface BuySkillResponse {

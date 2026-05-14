@@ -11,8 +11,10 @@ import type {
   OrderDeliverable,
   PaymentOrder,
   ProviderStats,
+  Review,
   SkillListing,
   SkillListingRequest,
+  SubmitReviewRequest,
   UserWallet,
   WalletNonceResponse,
   X402PaymentPayload,
@@ -225,6 +227,35 @@ export const marketApi = {
     }),
 
   myOrders: () => request<PaymentOrder[]>('/market/orders/mine'),
+
+  /**
+   * Buyer opens a dispute on a paid/delivered order. Blocks the weekly
+   * settlement payout until the platform admin resolves it.
+   */
+  openDispute: (orderId: number, reason: string) =>
+    request<{ id: number; orderId: number; status: string; reason: string; createdAt: string }>(
+      `/market/orders/${orderId}/dispute`,
+      { method: 'POST', body: JSON.stringify({ reason }) },
+    ),
+
+  /**
+   * Buyer submits a review on a paid/delivered order. Submitting on a
+   * delivered order also transitions the order to {@code confirmed}
+   * (implicit confirmDelivery → unblocks payout).
+   */
+  submitReview: (orderId: number, req: SubmitReviewRequest) =>
+    request<Review>(`/market/orders/${orderId}/review`, {
+      method: 'POST',
+      body: JSON.stringify(req),
+    }),
+
+  /** Public list of visible reviews for one agent, newest first. */
+  agentReviews: (agentId: number) =>
+    request<Review[]>(`/market/agents/${agentId}/reviews`),
+
+  /** Public list of visible reviews for one skill, newest first. */
+  skillReviews: (skillId: number) =>
+    request<Review[]>(`/market/skills/${skillId}/reviews`),
 
   // Buyer-only post-purchase deliverable info. Public listing responses no
   // longer carry the sensitive fields (skill's downloadUrl/filePath, agent's

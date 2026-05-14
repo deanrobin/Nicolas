@@ -287,3 +287,36 @@ CREATE TABLE IF NOT EXISTS order_disputes (
     UNIQUE KEY uk_order_disputes_order (order_id),
     KEY idx_order_disputes_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- [2026-05-14] V010 反馈机制 — 订单评价 reviews 表（issue #69）
+-- 订单进入 'delivered' 后买家有三种选择：打分（带可选评论）、申诉、不操作（auto-release）。
+-- 打分写入本表，一笔订单一条评价（order_id UNIQUE）。
+-- 提交评价同时把订单从 delivered 推到 confirmed（视为隐式 confirmDelivery）。
+-- service_provider 可以把违规评价标记为 'hidden'，但不能删（保留审计）。
+-- 评价本身不阻塞周结放款（提交评价反而推进了订单状态机）。
+
+CREATE TABLE IF NOT EXISTS reviews (
+    id            BIGINT        NOT NULL AUTO_INCREMENT,
+    order_id      BIGINT        NOT NULL
+                  COMMENT '关联的 payment_orders.id；一笔订单只能有一条评价',
+    listing_type  VARCHAR(10)   NOT NULL
+                  COMMENT 'AGENT | SKILL，与 payment_orders.order_type 同步',
+    listing_id    BIGINT        NOT NULL
+                  COMMENT 'agent_listings.id 或 skill_listings.id（与 listing_type 联合区分）',
+    buyer_id      BIGINT        NOT NULL
+                  COMMENT '评价作者 = users.id（必须等于 payment_orders.buyer_id）',
+    rating        TINYINT       NOT NULL
+                  COMMENT '评分 1..5',
+    comment       TEXT          NULL
+                  COMMENT '可选的文字评论；最多 2000 字（应用层校验）',
+    status        VARCHAR(16)   NOT NULL DEFAULT 'visible'
+                  COMMENT 'visible=公开展示 / hidden=service_provider 屏蔽（仍保留审计）',
+    created_at    DATETIME      NOT NULL,
+    updated_at    DATETIME      NOT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_reviews_order (order_id),
+    KEY idx_reviews_listing (listing_type, listing_id, status),
+    KEY idx_reviews_buyer (buyer_id),
+    CONSTRAINT chk_reviews_rating CHECK (rating BETWEEN 1 AND 5)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

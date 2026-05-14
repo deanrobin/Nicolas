@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
-  Card, Col, Row, Tag, Typography, Button, Space, Badge, Spin, Empty,
+  Card, Col, Row, Tag, Typography, Button, Space, Badge, Spin, Empty, Rate,
 } from 'antd'
 import {
   StarFilled,
@@ -182,6 +182,20 @@ export default function SkillMarketPage() {
                           ))}
                         </div>
                       )}
+
+                      <div style={{ marginBottom: 8, fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {s.averageRating != null ? (
+                          <>
+                            <Rate disabled allowHalf value={Number(s.averageRating)} style={{ fontSize: 12 }} />
+                            <Text strong style={{ fontSize: 12 }}>{s.averageRating}</Text>
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                              · {s.reviewCount} review{s.reviewCount === 1 ? '' : 's'}
+                            </Text>
+                          </>
+                        ) : (
+                          <Text type="secondary" style={{ fontSize: 12 }}>No reviews yet</Text>
+                        )}
+                      </div>
 
                       <div style={styles.cardFooter}>
                         <div>

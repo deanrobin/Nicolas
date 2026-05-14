@@ -6,17 +6,21 @@ import com.nicolas.config.PaymentConfig;
 import com.nicolas.exception.BizException;
 import com.nicolas.model.dto.AgentListingView;
 import com.nicolas.model.dto.ApiResponse;
+import com.nicolas.model.dto.ListingRatingStats;
 import com.nicolas.model.dto.OrderDeliverableView;
 import com.nicolas.model.dto.OrderDisputeView;
 import com.nicolas.model.dto.PaymentOrderView;
+import com.nicolas.model.dto.ReviewView;
 import com.nicolas.model.dto.SkillListingView;
 import com.nicolas.model.entity.AgentListing;
 import com.nicolas.model.entity.PaymentOrder;
+import com.nicolas.model.entity.Review;
 import com.nicolas.model.entity.SkillListing;
 import com.nicolas.repository.AgentListingRepository;
 import com.nicolas.repository.SkillListingRepository;
 import com.nicolas.service.OrderDisputeService;
 import com.nicolas.service.PaymentService;
+import com.nicolas.service.ReviewService;
 import com.nicolas.service.SkillFileService;
 import com.nicolas.service.X402PaymentService;
 import org.springframework.core.io.FileSystemResource;
@@ -30,9 +34,11 @@ import org.springframework.web.bind.annotation.*;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @RestController
 @RequestMapping("/market")
@@ -43,6 +49,7 @@ public class MarketController {
     private final PaymentService paymentService;
     private final X402PaymentService x402Service;
     private final OrderDisputeService disputeService;
+    private final ReviewService reviewService;
     private final ChainConfig chainConfig;
     private final PaymentConfig paymentConfig;
     private final SkillFileService skillFileService;
@@ -52,6 +59,7 @@ public class MarketController {
                             PaymentService paymentService,
                             X402PaymentService x402Service,
                             OrderDisputeService disputeService,
+                            ReviewService reviewService,
                             ChainConfig chainConfig,
                             PaymentConfig paymentConfig,
                             SkillFileService skillFileService) {
@@ -60,6 +68,7 @@ public class MarketController {
         this.paymentService = paymentService;
         this.x402Service = x402Service;
         this.disputeService = disputeService;
+        this.reviewService = reviewService;
         this.chainConfig = chainConfig;
         this.paymentConfig = paymentConfig;
         this.skillFileService = skillFileService;
@@ -67,15 +76,25 @@ public class MarketController {
 
     @GetMapping("/agents")
     public ResponseEntity<ApiResponse<List<AgentListingView>>> agents() {
-        List<AgentListingView> data = agentRepo.findByStatusOrderByCreatedAtDesc("approved")
-                .stream().map(AgentListingView::fromPublic).toList();
+        List<AgentListing> rows = agentRepo.findByStatusOrderByCreatedAtDesc("approved");
+        Map<Long, ListingRatingStats> stats = reviewService.statsForMany("AGENT",
+                rows.stream().map(AgentListing::getId).toList());
+        List<AgentListingView> data = rows.stream()
+                .map(e -> AgentListingView.fromPublic(e,
+                        stats.getOrDefault(e.getId(), ListingRatingStats.EMPTY)))
+                .toList();
         return ResponseEntity.ok(ApiResponse.ok(data));
     }
 
     @GetMapping("/skills")
     public ResponseEntity<ApiResponse<List<SkillListingView>>> skills() {
-        List<SkillListingView> data = skillRepo.findByStatusOrderByCreatedAtDesc("approved")
-                .stream().map(SkillListingView::from).toList();
+        List<SkillListing> rows = skillRepo.findByStatusOrderByCreatedAtDesc("approved");
+        Map<Long, ListingRatingStats> stats = reviewService.statsForMany("SKILL",
+                rows.stream().map(SkillListing::getId).toList());
+        List<SkillListingView> data = rows.stream()
+                .map(e -> SkillListingView.from(e,
+                        stats.getOrDefault(e.getId(), ListingRatingStats.EMPTY)))
+                .toList();
         return ResponseEntity.ok(ApiResponse.ok(data));
     }
 
@@ -85,7 +104,8 @@ public class MarketController {
         AgentListing a = agentRepo.findById(id)
                 .filter(x -> "approved".equals(x.getStatus()))
                 .orElseThrow(() -> BizException.notFound("Agent listing not found"));
-        return ResponseEntity.ok(ApiResponse.ok(AgentListingView.fromPublic(a)));
+        return ResponseEntity.ok(ApiResponse.ok(
+                AgentListingView.fromPublic(a, reviewService.statsFor("AGENT", id))));
     }
 
     /** Public detail view of one approved Skill listing. 404 if missing or unapproved. */
@@ -94,7 +114,24 @@ public class MarketController {
         SkillListing s = skillRepo.findById(id)
                 .filter(x -> "approved".equals(x.getStatus()))
                 .orElseThrow(() -> BizException.notFound("Skill listing not found"));
-        return ResponseEntity.ok(ApiResponse.ok(SkillListingView.from(s)));
+        return ResponseEntity.ok(ApiResponse.ok(
+                SkillListingView.from(s, reviewService.statsFor("SKILL", id))));
+    }
+
+    /** Public review feed for one Agent listing, newest first, hidden reviews excluded. */
+    @GetMapping("/agents/{id}/reviews")
+    public ResponseEntity<ApiResponse<List<ReviewView>>> agentReviews(@PathVariable Long id) {
+        List<ReviewView> data = reviewService.listForListing("AGENT", id)
+                .stream().map(ReviewView::from).toList();
+        return ResponseEntity.ok(ApiResponse.ok(data));
+    }
+
+    /** Public review feed for one Skill listing, newest first, hidden reviews excluded. */
+    @GetMapping("/skills/{id}/reviews")
+    public ResponseEntity<ApiResponse<List<ReviewView>>> skillReviews(@PathVariable Long id) {
+        List<ReviewView> data = reviewService.listForListing("SKILL", id)
+                .stream().map(ReviewView::from).toList();
+        return ResponseEntity.ok(ApiResponse.ok(data));
     }
 
     /** Create a buy order for a skill. Returns order + payment instructions. */
@@ -177,12 +214,37 @@ public class MarketController {
                 OrderDisputeView.from(disputeService.open(userId, id, req.reason()))));
     }
 
-    /** Buyer's own orders. */
+    /** Buyer's own orders, each annotated with {@code hasReview} for the history UI. */
     @GetMapping("/orders/mine")
     public ResponseEntity<ApiResponse<List<PaymentOrderView>>> myOrders(
             @AuthenticationPrincipal Long userId) {
-        return ResponseEntity.ok(ApiResponse.ok(
-                paymentService.getMyOrders(userId).stream().map(PaymentOrderView::from).toList()));
+        List<PaymentOrder> rows = paymentService.getMyOrders(userId);
+        Set<Long> reviewedOrderIds = new HashSet<>();
+        for (Review r : reviewService.listByBuyer(userId)) {
+            reviewedOrderIds.add(r.getOrderId());
+        }
+        List<PaymentOrderView> data = rows.stream()
+                .map(o -> PaymentOrderView.from(o, reviewedOrderIds.contains(o.getId())))
+                .toList();
+        return ResponseEntity.ok(ApiResponse.ok(data));
+    }
+
+    public record SubmitReviewRequest(Integer rating, String comment) {}
+
+    /**
+     * Buyer submits a review for their order. The order must be {@code paid}
+     * or {@code delivered} and not under dispute. Submitting on a
+     * {@code delivered} order also transitions it to {@code confirmed}
+     * (implicit confirmDelivery → unblocks weekly settlement payout).
+     */
+    @PostMapping("/orders/{id}/review")
+    public ResponseEntity<ApiResponse<ReviewView>> submitReview(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long id,
+            @RequestBody SubmitReviewRequest req) {
+        if (req == null) throw BizException.badRequest("Request body required");
+        return ResponseEntity.ok(ApiResponse.ok(ReviewView.from(
+                reviewService.submit(userId, id, req.rating(), req.comment()))));
     }
 
     /**

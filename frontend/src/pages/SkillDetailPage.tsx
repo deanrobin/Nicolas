@@ -25,6 +25,7 @@ import { App as AntApp } from 'antd'
 import { useNavigate, useParams } from 'react-router-dom'
 import { marketApi } from '../api/client'
 import type { OrderStatus, PaymentOrder, SkillListing } from '../types/api'
+import ReviewSection from '../components/ReviewSection'
 
 const { Title, Text, Paragraph } = Typography
 
@@ -35,11 +36,12 @@ function paymentConfirmationsHint(s: OrderStatus): string {
 }
 
 const STATUS_META: Record<OrderStatus, { color: string; icon: React.ReactNode; label: string }> = {
-  pending_payment: { color: 'orange', icon: <ClockCircleOutlined />, label: 'Pending payment' },
-  confirming:      { color: 'blue',   icon: <ClockCircleOutlined />, label: 'Confirming on chain' },
-  paid:            { color: 'cyan',   icon: <CheckCircleOutlined />, label: 'Paid · in holdback' },
-  delivered:       { color: 'green',  icon: <CheckCircleOutlined />, label: 'Delivered' },
-  refunded:        { color: 'red',    icon: <CloseCircleOutlined />, label: 'Refunded' },
+  pending_payment: { color: 'orange',   icon: <ClockCircleOutlined />, label: 'Pending payment' },
+  confirming:      { color: 'blue',     icon: <ClockCircleOutlined />, label: 'Confirming on chain' },
+  paid:            { color: 'cyan',     icon: <CheckCircleOutlined />, label: 'Paid · in holdback' },
+  delivered:       { color: 'green',    icon: <CheckCircleOutlined />, label: 'Delivered' },
+  confirmed:       { color: 'geekblue', icon: <CheckCircleOutlined />, label: 'Confirmed · payout pending' },
+  refunded:        { color: 'red',      icon: <CloseCircleOutlined />, label: 'Refunded' },
 }
 
 export default function SkillDetailPage() {
@@ -281,10 +283,21 @@ export default function SkillDetailPage() {
                   Waiting for {paymentConfirmationsHint(order.status)} — the deliverable will appear here automatically.
                 </Paragraph>
               )}
+              <Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 0, fontSize: 12 }}>
+                Rate or open a dispute from{' '}
+                <a onClick={() => navigate('/orders')} style={{ cursor: 'pointer' }}>My Orders</a>.
+              </Paragraph>
             </Card>
           )}
         </Space>
       </Card>
+
+      <ReviewSection
+        listingType="SKILL"
+        listingId={skill.id}
+        averageRating={skill.averageRating}
+        reviewCount={skill.reviewCount}
+      />
     </div>
   )
 }

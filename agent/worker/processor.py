@@ -15,6 +15,12 @@ from typing import Any
 
 from worker import db, prechecks
 from worker.config import WorkerConfig
+from worker.demo_overrides import (
+    AUTO_PASS_KEYWORD,
+    NEEDS_HUMAN_KEYWORD,
+    DemoOverride,
+    detect_in_record,
+)
 from worker.llm_review import AuditorLLM, AuditVerdict
 from worker.notify import send_feishu
 
@@ -50,6 +56,34 @@ def process_one(
     conn,
 ) -> None:
     record_id = record["id"]
+
+    # Step 0: demo keyword override. Scans the content fields the LLM
+    # would otherwise read and short-circuits to a forced verdict
+    # without burning tokens. See worker/demo_overrides.py.
+    override = detect_in_record(
+        record,
+        ["name", "brand_name", "description", "service_input", "service_output", "tags"],
+    )
+    if override is DemoOverride.AUTO_PASS:
+        reason = f"demo keyword override: {AUTO_PASS_KEYWORD!r} → auto-approved"
+        db.update_status(conn, spec.table, record_id, "approved", reason)
+        log.info("[%s#%s] %s", spec.table, record_id, reason)
+        send_feishu(
+            cfg.feishu_webhook_url,
+            table=spec.label, record_id=record_id,
+            status="approved (demo keyword)", reason=reason,
+        )
+        return
+    if override is DemoOverride.NEEDS_HUMAN:
+        reason = f"demo keyword override: {NEEDS_HUMAN_KEYWORD!r} → forwarded to admin"
+        db.update_status(conn, spec.table, record_id, "needs_human", reason)
+        log.info("[%s#%s] %s", spec.table, record_id, reason)
+        send_feishu(
+            cfg.feishu_webhook_url,
+            table=spec.label, record_id=record_id,
+            status="needs_human (demo keyword)", reason=reason,
+        )
+        return
 
     # Step 1: deterministic Python prechecks.
     pre = prechecks.run(record, cfg.rules)

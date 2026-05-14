@@ -16,8 +16,28 @@ from typing import Any
 
 from worker import db
 from worker.config import WorkerConfig
+from worker.demo_overrides import (
+    AUTO_PASS_KEYWORD,
+    NEEDS_HUMAN_KEYWORD,
+    DemoOverride,
+    detect_in_record,
+)
 from worker.dispute_llm import ArbitratorLLM, DisputeRuling
 from worker.notify import send_feishu
+
+
+# Context fields the demo-override scan looks at — same set the
+# arbitrator LLM would otherwise read.
+_OVERRIDE_FIELDS = [
+    "buyer_reason",
+    "seller_rebuttal",
+    "listing_name",
+    "listing_description",
+    "listing_promised_input",
+    "listing_promised_output",
+    "invocation_question",
+    "invocation_answer",
+]
 
 log = logging.getLogger(__name__)
 
@@ -67,6 +87,69 @@ def process_one(
             "[dispute#%s] order %s missing — skipping until admin acts",
             dispute_id, order_id,
         )
+        return
+
+    # Step 1.5: demo keyword override. Bypasses the LLM entirely and
+    # bypasses the auto-reject amount cap — these phrases exist
+    # specifically so the operator can force either path during demos.
+    # See worker/demo_overrides.py.
+    override = detect_in_record(ctx, _OVERRIDE_FIELDS)
+    if override is DemoOverride.AUTO_PASS:
+        synthetic = DisputeRuling(
+            ruling="RELEASE_FULL",
+            buyer_refund_pct=0,
+            confidence=1.0,
+            auto_execute=True,
+            summary=f"demo keyword override: {AUTO_PASS_KEYWORD!r} → auto-rejected",
+        )
+        try:
+            db.write_dispute_ruling(
+                conn, dispute_id,
+                ruling=synthetic.ruling,
+                buyer_refund_pct=synthetic.buyer_refund_pct,
+                confidence=synthetic.confidence,
+                auto_execute=synthetic.auto_execute,
+                summary=synthetic.summary,
+                reasoning_json=ArbitratorLLM.ruling_to_reasoning_json(synthetic),
+            )
+            db.auto_reject_dispute(conn, dispute_id, order_id, synthetic.summary)
+            log.info("[dispute#%s] demo keyword AUTO_PASS — auto-rejected", dispute_id)
+            send_feishu(
+                cfg.feishu_webhook_url,
+                table="纠纷仲裁", record_id=dispute_id,
+                status="auto-rejected (demo keyword)",
+                reason=synthetic.summary[:200],
+            )
+        except Exception:
+            log.exception("[dispute#%s] demo AUTO_PASS path failed", dispute_id)
+        return
+    if override is DemoOverride.NEEDS_HUMAN:
+        synthetic = DisputeRuling(
+            ruling="ESCALATE_HUMAN",
+            buyer_refund_pct=0,
+            confidence=0.5,
+            auto_execute=False,
+            summary=f"demo keyword override: {NEEDS_HUMAN_KEYWORD!r} → forwarded to admin",
+        )
+        try:
+            db.write_dispute_ruling(
+                conn, dispute_id,
+                ruling=synthetic.ruling,
+                buyer_refund_pct=synthetic.buyer_refund_pct,
+                confidence=synthetic.confidence,
+                auto_execute=synthetic.auto_execute,
+                summary=synthetic.summary,
+                reasoning_json=ArbitratorLLM.ruling_to_reasoning_json(synthetic),
+            )
+            log.info("[dispute#%s] demo keyword NEEDS_HUMAN — left for admin", dispute_id)
+            send_feishu(
+                cfg.feishu_webhook_url,
+                table="纠纷仲裁", record_id=dispute_id,
+                status="needs admin review (demo keyword)",
+                reason=synthetic.summary[:200],
+            )
+        except Exception:
+            log.exception("[dispute#%s] demo NEEDS_HUMAN path failed", dispute_id)
         return
 
     # Step 2: arbitrator LLM call.

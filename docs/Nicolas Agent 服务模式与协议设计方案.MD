@@ -4,7 +4,11 @@
 > 适用项目路径：`/root/Nicolas`  
 > 设计目标：为 Nicolas 的 Agent 商品设计一套可交易、可代理调用、可多轮交互、可交付验收、可纠纷审计的服务标准。
 >
-> **资金托管说明**：本文件描述的 Agent 服务协议适用于 V1（平台钱包托管）和 V2（合约托管）。V1 中交付后由 Java Job 执行放款，V2 中交付后调用 NicolasEscrowV2.markDelivered。详见：[Nicolas 支付托管 V1 平台钱包方案.MD](./Nicolas%20支付托管%20V1%20平台钱包方案.MD)
+> **资金托管说明**：本文件描述的 Agent 服务协议适用于 V1（x402 入账 + 平台钱包托管）和 V2（合约托管）。
+> V1 中：买家通过 x402（OKX Wallet 一次签名 + OKX Facilitator paymaster 替买家上链）入账到平台收款钱包，
+> 交付确认后由 `WeeklySettlementJob` + `payout_execute_job` 用 operator 钱包链上放款给卖家。
+> V2 中：交付后调用 NicolasEscrowV2.markDelivered。
+> 详见：[Nicolas 支付托管 V1 平台钱包方案.MD](./Nicolas%20支付托管%20V1%20平台钱包方案.MD)
 
 ---
 
@@ -82,15 +86,18 @@ Skill 是文件型商品。
 流程：
 
 ```text
-买家付款
+买家付款（x402：OKX Wallet 一次签名 + OKX paymaster 上链，零 gas）
   ↓
-资金进入 Escrow
+资金进入平台收款钱包（V1）/ Escrow 合约（V2）
   ↓
 平台解锁 Skill.md / skill package 下载权限
   ↓
-平台链上 markDelivered
+平台 markDelivered（V1：DB；V2：合约）
   ↓
-买家确认交付 / 到期自动放款
+买家确认交付 / 到期自动确认
+  ↓
+V1：周结由 operator 钱包链上放款给卖家
+V2：合约自动放款给卖家
 ```
 
 Skill 的交付物是：
@@ -120,9 +127,9 @@ Agent 是服务型商品。
 流程：
 
 ```text
-买家付款
+买家付款（x402：OKX Wallet 一次签名 + OKX paymaster 上链，零 gas）
   ↓
-资金进入 Escrow
+资金进入平台收款钱包（V1）/ Escrow 合约（V2）
   ↓
 平台创建 Agent Session
   ↓
@@ -136,9 +143,12 @@ Agent 是服务型商品。
   ↓
 平台保存交付物并生成 deliveryHash
   ↓
-平台链上 markDelivered
+平台 markDelivered（V1：DB 切换；V2：合约调用）
   ↓
-买家确认 / 发起纠纷 / 到期放款
+买家确认 / 发起纠纷 / 到期自动确认
+  ↓
+V1：周结由 operator 钱包链上放款给卖家
+V2：合约自动放款给卖家
 ```
 
 Agent 的交付物不是源码，也不是文件下载权限，而是：
@@ -239,13 +249,15 @@ Buyer → Nicolas Frontend → Java Backend → Agent Service Gateway → Seller
                    └─────────┬──────────┘
                              │
                              ▼
-                   ┌────────────────────┐
-                   │ 资金托管层          │
-                   │ V1: 平台钱包+Job    │
-                   │   payout_job放款   │
-                   │ V2: EscrowContract │
-                   │   markDelivered    │
-                   └────────────────────┘
+                   ┌──────────────────────────┐
+                   │ 资金托管层                │
+                   │ V1: x402 入账 (OKX        │
+                   │     Facilitator) →        │
+                   │     平台钱包 + Operator   │
+                   │     Job 放款              │
+                   │ V2: EscrowContract        │
+                   │     markDelivered         │
+                   └──────────────────────────┘
 ```
 
 平台在这里不是简单反向代理，而是：
@@ -1913,22 +1925,29 @@ deliveryHash
 
 然后更新资金托管状态（V1 / V2 不同实现）：
 
-**V1 平台钱包托管（Demo 当前方案）**：
+**V1 x402 入账 + 平台钱包托管（Demo 当前方案）**：
 
 ```text
+（前置）买家通过 x402 完成入账：OKX Wallet 一次签名 → OKX Facilitator → paymaster 上链
+              → 平台收款钱包收到 USDT → payment_order.status = paid
+              → payment_ledger 锁定资金
+
 卖家 Agent 返回 FINAL_DELIVERY
   ↓
 平台保存 delivery
   ↓
 平台计算 content_hash + deliveryHash
   ↓
-Java 更新 payment_order.status = DELIVERED
+Java 更新 payment_order.status = delivered
   ↓
 DB 记录 deliveryHash
   ↓
 买家可以确认交付或发起纠纷
   ↓
-买家确认 → Java 创建 payout_job → payout_execute_job 放款
+买家确认 → status=confirmed
+       → WeeklySettlementJob.cutoff（周五 12:00）→ settle_pending
+       → WeeklySettlementJob.payout（周日 12:00）→ 创建 payout_job
+       → payout_execute_job 用 OPERATOR_PRIVATE_KEY 链上放款给卖家
 ```
 
 **V2 合约托管（升级路径）**：

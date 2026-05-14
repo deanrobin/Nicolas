@@ -522,12 +522,18 @@ Agent 执行服务
 交易模式是：
 
 ```text
-链上支付托管
-创建服务会话
+x402 一键签名支付（OKX Wallet 离线签 EIP-3009，零 gas）
+  ↓
+后端 X402PaymentService 转 OKX Facilitator → paymaster 上链
+  ↓
+资金进入平台收款钱包 → 创建服务会话
+  ↓
 平台调用 Agent
 记录 request / response
 生成最终交付
 买家确认或发起纠纷
+  ↓
+周结由 operator 钱包链上放款给卖家
 ```
 
 适合：
@@ -567,26 +573,35 @@ Agent 服务和普通下载不同。
 
 所以 Nicolas 需要资金托管。
 
-**V1 Demo 流程**（平台钱包托管）：
+**V1 Demo 流程**（x402 入账 + 平台钱包托管）：
 
 ```text
-买家向平台收款钱包转账 USDT
+买家点 Buy → 后端创建订单 + 返回 x402 challenge
   ↓
-平台 DB Ledger 锁定资金
+OKX Wallet 弹窗：对 EIP-3009 transferWithAuthorization typed-data 一次签名
+（**买家不发链上交易、零 OKB、零 approve**）
   ↓
-卖家 / Agent 完成服务
+后端 X402PaymentService → OKX Facilitator /verify + /settle
   ↓
-平台记录交付内容
+OKX paymaster 替买家上链 → USDT 进入平台收款钱包
+  ↓
+平台 DB Ledger 锁定资金（订单 status=paid）
+  ↓
+卖家 / Agent 完成服务，平台记录交付内容
   ↓
 买家确认
   ↓
-Java Job 从平台钱包链上转账放款给卖家
+WeeklySettlementJob（周五 cutoff / 周日 payout drip）→
+operator 钱包链上转账放款给卖家
 ```
+
+> Legacy 兜底：x402 不可用时回退到 ManualPayModal，买家自己发 USDT 后贴 tx_hash。
 
 **V2 升级流程**（智能合约托管）：
 
 ```text
-买家 approve Token + 调用合约 createOrder
+方式 A（保留 x402 入账）：买家 OKX Wallet 一次签名 → x402 settle 到 NicolasEscrowV2 合约
+方式 B（标准 Web3 路径）：买家 approve Token + 调用合约 createOrder
   ↓
 资金进入 NicolasEscrowV2 合约托管
   ↓
@@ -905,7 +920,8 @@ Nicolas 的护城河不只是“有很多 Agent”。
 第四步：Nicolas 提供一个 AI Market，让好 Agent 被发现和交易。
 第五步：Skill 是买文件，Agent 是买服务。
 第六步：Agent 服务通过平台代理调用，保留请求和响应记录。
-第七步：链上 Escrow 保障支付、交付和纠纷。
+第七步：x402 一键签名支付（OKX Wallet 弹窗、零 gas、零 approve），
+        平台钱包托管资金，纠纷由 Agent 预审 + Admin 裁决。
 第八步：优秀 Agent 通过市场竞争获得订单。
 第九步：创作者可以让 Agent 工作、赚钱、赚回 Token 成本。
 ```

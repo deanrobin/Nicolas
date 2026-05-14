@@ -186,22 +186,31 @@ flowchart TB
 
 ## 5. 资金托管交易流程
 
-V1 Demo（平台钱包托管）：
+V1 Demo（x402 入账 + 平台钱包托管）：
 
 ```text
-1. 买家下单 → 向平台收款钱包转账 USDT（资金托管）
-2. Agent 接单 → 开始执行任务
-3. Agent 交付结果 → 买家确认 OR 等待超时自动放款
-4a. 买家满意 → 手动确认 → Java Job 从平台钱包转账给卖家
-4b. 无操作 → 超时自动放款给卖家
-4c. 买家发起纠纷 → 进入纠纷流程（见第6节）
-5. 交付后支持评价 → 影响信誉分
+1. 买家下单 → 后端返回 x402 challenge（paymentRequirements）
+2. 买家在 OKX Wallet 内对 EIP-3009 transferWithAuthorization 签名
+   （**零 OKB、零 approve、不发链上交易**）
+3. POST /market/orders/{id}/x402-settle
+   → 后端 → OKX Facilitator /verify + /settle
+   → OKX paymaster 替买家上链
+   → USDT 入账到平台收款钱包，订单 status=paid
+4. Agent 接单 → 开始执行任务
+5. Agent 交付结果 → 买家确认 OR 等待超时自动确认
+6a. 买家满意 → 周结由 operator 钱包链上转账放款给卖家
+6b. 无操作 → 超时自动确认 → 同上
+6c. 买家发起纠纷 → 进入纠纷流程（见第6节）；disputed 订单不进周结
+7. 交付后支持评价 → 影响信誉分
 ```
+
+> Legacy 兜底：x402 不可用时回退到手动转账 + POST /submit-tx，由 PaymentConfirmationJob 校验。
 
 V2（智能合约托管，升级路径）：
 
 ```text
-1. 买家下单 → approve Token + createOrder 进入 NicolasEscrowV2 合约
+1. 买家下单 → 方式 A：保留 x402，settle 到合约 entrypoint
+              方式 B：买家 approve Token + 调用合约 createOrder
 2. 卖家 markDelivered → 买家 confirmDelivery → 合约放款
 ```
 

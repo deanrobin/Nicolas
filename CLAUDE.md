@@ -81,22 +81,38 @@ Nicolas is a full-stack AI agent platform split into four sub-projects:
 
 **V1 Demo / MVP 阶段强制约束**：
 
-- **V1 买家支付路径 = 手动转账 + tx_hash 校验**（Skill 与 Agent 同流程，详见
-  [`docs/Nicolas 支付托管 V1 平台钱包方案.MD`](docs/Nicolas%20支付托管%20V1%20平台钱包方案.MD) §12）：
-  dApp **不再**唤起钱包发交易，买家在自己钱包里把 USDT 转给平台地址，回前端贴 `tx_hash`，
-  后端确认时核对 `receipt.from == 下单时绑定的钱包`、抓 `nonce` 落库审计、`tx_hash` 全局唯一。
-  原因是 XLayer "USDT 免 gas" 只在 OKX Wallet 自家 Send UI 里才走 paymaster，dApp 唤起会被
-  钱包要 OKB gas，体验与官方宣传冲突。
-- **V1 Escrow = 平台钱包托管**：买家向平台收款钱包转账，Java 后端 DB Ledger + Job 完成放款和退款。
-- **V2 Escrow = 智能合约托管**：V2 再升级为 `NicolasEscrowV2` 合约接管资金执行层。
-- **合约不是 Demo P0**：以下功能**不得**作为 V1 必要前置条件：
-  - 买家 `approve` Token
+- **V1 买家支付路径 = x402（HTTP 402 + OKX Facilitator）**（Skill 与 Agent 同流程，
+  详见 [`docs/Nicolas 支付托管 V1 平台钱包方案.MD`](docs/Nicolas%20支付托管%20V1%20平台钱包方案.MD) §12）：
+  下单接口（`POST /market/{skills|agents}/{id}/buy`）返回 `data.x402` challenge
+  （`paymentRequirements`）；前端用 OKX Wallet 对 EIP-3009 `transferWithAuthorization`
+  typed-data 离线签名，POST `/market/orders/{id}/x402-settle` 提交 paymentPayload；
+  后端 `X402PaymentService` sanityCheck 后转发 OKX `/verify` + `/settle`，
+  **OKX paymaster 替买家上链并替付 gas**，syncSettle 同步返回 tx_hash；
+  之后用自己的 RPC 做独立 receipt 校验置为 `paid`。
+  买家**全程零 OKB、零 approve、零链上交易**，仅一次 EIP-712 签名。
+- **Legacy 兜底**：保留 `POST /market/orders/{id}/submit-tx` 手动转账路径，
+  仅在 `nicolas.payment.x402.enabled=false` / OKX 凭证缺失 / Facilitator 不可达时使用。
+- **V1 Escrow = 平台钱包托管**：x402 settle 的 USDT `payTo` 为平台收款钱包；
+  Java 后端 DB Ledger + Operator 钱包 + Job 完成放款（周结 drip）和退款。
+- **V2 Escrow = 智能合约托管**：V2 再升级为 `NicolasEscrowV2` 合约接管资金执行层；
+  x402 入账侧仍可保留，只是把 `payTo` 切到合约 entrypoint。
+- **自建合约不是 Demo P0**：以下功能**不得**作为 V1 必要前置条件：
+  - 买家 `approve` Token（x402 用 EIP-3009 一次签名替代）
   - 买家调用 `AgentEscrow.createOrder`
   - 链上 `markDelivered / confirmDelivery / resolveDispute`
   - 完整 event indexer / 合约审计 / 合约 verify
-- **新增代码优先**围绕 `payment_orders`、`payment_ledger`、`wallet_transactions`、`payout_jobs` 这四张核心表展开，而不是围绕合约调用。
-- **代码抽象**：建议使用 `PaymentEscrowLayer` 接口抽象资金执行层；V1 实现 `PlatformWalletEscrowService`，V2 实现 `ContractEscrowService`，使订单 / 交付 / 纠纷 / Admin 逻辑可以复用。
+- **反滥用强校验**：sanityCheck 必须在调 OKX 之前完成
+  （`payload.authorization.from == buyer_wallet_address`、`to == platformWallet`、
+  `value == amount`），不能依赖 OKX `/verify` 兜底。
+- **新增代码优先**围绕 `payment_orders`、`payment_ledger`、`wallet_transactions`、
+  `payout_jobs`、`X402PaymentService`、`OkxFacilitatorClient` 展开，而不是围绕合约调用。
+- **代码抽象**：建议使用 `PaymentEscrowLayer` 接口抽象资金执行层；V1 实现
+  `PlatformWalletEscrowService`（入账走 x402，放款走 operator 钱包），V2 实现
+  `ContractEscrowService`，使订单 / 交付 / 纠纷 / Admin 逻辑可以复用。
 - **`ESCROW_CONTRACT_ADDRESS`** 等合约环境变量标注为"V2 需要"，V1 Demo 不依赖，不启动时不报错。
+- **OKX Facilitator 凭证**：x402 主流程依赖 `ONCHAINOS_API_KEY` / `_SECRET` /
+  `_PASSPHRASE`（与 OnchainOS 共用同一个 OKX 账号）；缺失时后端自动 disable x402 并
+  让前端走 §12.6 的 Legacy 兜底。
 
 ---
 
@@ -193,18 +209,24 @@ com.nicolas/
 | `MAIL_DEV_MODE` | `true` | Print codes to log instead of sending email |
 | `XLAYER_RPC_URL` | `https://rpc.xlayer.tech` | XLayer RPC endpoint |
 | `XLAYER_CHAIN_ID` | `196` | 196=mainnet, 195=testnet |
-| `XLAYER_USDT_ADDRESS` | (mainnet USDT) | ERC-20 USDT on XLayer |
+| `XLAYER_USDT_ADDRESS` | (mainnet USDT) | 标准 ERC-20 USDT on XLayer（Legacy 兜底路径用） |
 | `PAYMENT_MODE` | `PLATFORM_WALLET` | V1=`PLATFORM_WALLET`；V2=`CONTRACT` |
-| `PLATFORM_WALLET_ADDRESS` | — | **V1** 平台收款钱包地址（公开） |
+| `PLATFORM_WALLET_ADDRESS` | — | **V1** 平台收款钱包地址（公开）；同时是 x402 `payTo` |
 | `PLATFORM_WALLET_PRIVATE_KEY` | — | **V1 Secret.** 平台钱包私钥，仅服务器 env |
 | `PAYOUT_JOB_ENABLED` | `true` | 是否启用放款 Job |
+| `nicolas.payment.x402.enabled` | `true` | x402 主流程开关；关闭则只走 Legacy `submit-tx` |
+| `nicolas.payment.x402.facilitator-base-url` | `https://web3.okx.com` | OKX Facilitator 根地址 |
+| `nicolas.payment.x402.token-address` | `0x779ded0c9e1022225f8e0630b35a9b54be713736` | EIP-3009 paymaster wrapper（XLayer GasFree USDT） |
+| `nicolas.payment.x402.network` | `eip155:196` | x402 CAIP-2 network 标识 |
+| `nicolas.payment.x402.sync-settle` | `true` | OKX `/settle` 阻塞到上链确认才返回 |
+| `chain.xlayer.usdt-gasfree-address` | `0x779ded…713736` | `PaymentConfirmationJob` 同时认这个合约的 Transfer log |
 | `ESCROW_CONTRACT_ADDRESS` | — | **V2 需要。** 已部署的 `NicolasEscrowV2` 地址 |
-| `OPERATOR_ADDRESS` | — | Platform operator wallet (public)；V2 为合约 owner |
-| `OPERATOR_PRIVATE_KEY` | — | **V2 Secret.** Operator key — server env only |
+| `OPERATOR_ADDRESS` | — | Platform operator wallet (public)；用于 V1 放款 + V2 合约 owner |
+| `OPERATOR_PRIVATE_KEY` | — | **V1+V2 Secret.** Operator key — server env only，用于 `payout_execute_job` 链上转账给卖家 |
 | `ONCHAINOS_BASE_URL` | OKX wallet API | OnchainOS base URL |
-| `ONCHAINOS_API_KEY` | — | **Secret.** OK-ACCESS-KEY |
-| `ONCHAINOS_API_SECRET` | — | **Secret.** signing secret |
-| `ONCHAINOS_PASSPHRASE` | — | **Secret.** OK-ACCESS-PASSPHRASE |
+| `ONCHAINOS_API_KEY` | — | **Secret.** OK-ACCESS-KEY，x402 主流程**必填** |
+| `ONCHAINOS_API_SECRET` | — | **Secret.** HMAC-SHA256 签名密钥，x402 主流程**必填** |
+| `ONCHAINOS_PASSPHRASE` | — | **Secret.** OK-ACCESS-PASSPHRASE，x402 主流程**必填** |
 | `ONCHAINOS_PROJECT_ID` | — | OK-ACCESS-PROJECT |
 
 **Dev mode**: Set `MAIL_DEV_MODE=true` (default) — verification codes are logged, no real email sent.

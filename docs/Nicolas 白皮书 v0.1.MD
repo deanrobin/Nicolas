@@ -24,14 +24,19 @@ Nicolas 不只是一个 Prompt 商店，也不只是一个 Agent 展示目录。
 - 卖家可以上架自己调教好的 Skill / Agent；
 - 平台通过 Agent Service Gateway 代理调用卖家 Agent；
 - 所有服务过程保留 request / response / delivery 记录；
-- 买家付款进入**资金托管层**（V1 = 平台钱包 + DB Ledger；V2 = 智能合约 Escrow）；
-- 服务完成后通过 Job（V1）/ 合约放款（V2）结算给卖家；
+- 买家付款走 **x402（HTTP 402 + OKX Facilitator）**：在 OKX Wallet 内一次 EIP-712 签名，
+  OKX paymaster 替买家上链并替付 gas，资金落入**平台钱包托管层**（V1 = 平台钱包 + DB Ledger；
+  V2 = 智能合约 Escrow）；
+- 服务完成后通过 Operator 钱包 + Job（V1）/ 合约放款（V2）结算给卖家；
 - 不满意时可进入纠纷，由 dispute_agent 和 Admin 共同处理；
 - 真实交易数据、评价、复购、退款率和纠纷率共同筛选出真正优质的 Agent。
 
 Nicolas 的愿景是建立一个 AI Agent 时代的”服务型市场协议”：让 AI 能力像商品一样被发现，像服务一样被调用，像资产一样产生收入，像市场一样自我进化。
 
-**支付托管路线**：V1 Demo 使用平台钱包托管（快速可演示，链上真实 Token 转账），V2 升级为 `NicolasEscrowV2` 智能合约托管（更去中心化、更可信）。两阶段采用相同的业务层（订单、交付、纠纷、审计），仅底层资金执行层不同。
+**支付托管路线**：V1 Demo 使用 **x402（OKX Facilitator）做买家入账 + 平台钱包托管**
+（买家零 gas、零 approve、一次签名，资金入账后由 Java DB Ledger 托管，operator 钱包通过
+Job 周结放款），V2 升级为 `NicolasEscrowV2` 智能合约托管（更去中心化、更可信；x402 入账
+通道仍可保留）。两阶段采用相同的业务层（订单、交付、纠纷、审计），仅底层资金执行层不同。
 
 ---
 
@@ -269,7 +274,9 @@ Prompt 模板
 交易流程：
 
 ```text
-买家付款进入 Escrow
+买家付款（x402：OKX Wallet 一次签名，零 gas）
+  ↓
+资金进入平台收款钱包（V1）/ Escrow 合约（V2）
   ↓
 平台解锁 Skill 文件
   ↓
@@ -277,11 +284,12 @@ Prompt 模板
   ↓
 平台生成 deliveryHash
   ↓
-链上 markDelivered
+markDelivered（V1：DB 状态切换；V2：合约调用）
   ↓
-买家确认
+买家确认 / 超时自动确认
   ↓
-链上放款
+V1：周结 → operator 钱包链上放款给卖家
+V2：合约 confirmDelivery 自动放款
 ```
 
 Skill 模式的核心是：
@@ -595,22 +603,30 @@ Gateway 的意义：
 
 Escrow 是 Nicolas 的资金信任机制。
 
-在 Nicolas 中，Escrow 由智能合约实现。
+在 Nicolas 中，Escrow 分两个阶段实现：
+
+- **V1（当前 Demo）**：买家入账走 **x402（HTTP 402 + OKX Facilitator）**，资金落入
+  平台收款钱包，Java DB Ledger 做账本托管，operator 钱包通过 Job 周结放款给卖家。
+- **V2（升级路径）**：升级为 `NicolasEscrowV2` 智能合约接管资金执行层；x402 入账侧
+  仍可保留，仅把 `payTo` 切到合约 entrypoint。
 
 ### 10.1 正常交易流程
 
 ```text
-买家付款
+买家付款（OKX Wallet 一次 EIP-712 签名，零 gas）
   ↓
-资金进入 Escrow 合约
+x402 paymentPayload → Nicolas 后端 → OKX Facilitator /verify + /settle
+  ↓
+OKX paymaster 替买家上链 → 资金进入平台收款钱包（V1）/ Escrow 合约（V2）
   ↓
 卖家 / Agent 完成交付
   ↓
 平台 markDelivered
   ↓
-买家 confirmDelivery
+买家 confirmDelivery（或超时自动确认）
   ↓
-合约放款给卖家
+V1：WeeklySettlementJob 周结生成 payout_job → operator 钱包链上转账给卖家
+V2：合约 confirmDelivery 自动放款给卖家
 ```
 
 ### 10.2 纠纷流程
@@ -973,9 +989,9 @@ The market settles value.
 Nicolas 推荐架构：
 
 ```text
-Frontend
+Frontend (含 X402PayModal + OKX Wallet)
   ↓
-Java Backend
+Java Backend (含 X402PaymentService + OkxFacilitatorClient)
   ↓
 Agent Service Gateway
   ↓
@@ -983,17 +999,20 @@ Python Agent Orchestrator / External Seller Agent
   ↓
 Delivery
   ↓
-Escrow Contract
+V1: 平台钱包托管（DB Ledger + Operator 钱包放款）
+V2: NicolasEscrowV2 合约
 ```
 
 核心模块：
 
 ```text
-Frontend：用户购买、会话、确认、纠纷、Admin 后台
-Java Backend：订单、用户、商家、DB、链上状态、Agent Gateway
+Frontend：用户购买、X402PayModal 一键签名、会话、确认、纠纷、Admin 后台
+Java Backend：订单、用户、商家、DB、x402 入账、放款 Job、链上状态、Agent Gateway
 Python Orchestrator：平台 Agent、托管卖家 Agent、审核/客服/纠纷 Agent
-Onchain Contract：Escrow 托管、交付、确认、退款、仲裁
-MySQL：订单、session、message、call、delivery、review、dispute
+External：OKX Facilitator (web3.okx.com /pay/x402/{verify,settle}) + OKX Paymaster
+V1 资金层：平台收款钱包（payTo）+ Operator 钱包（放款执行）+ payment_ledger
+V2 资金层：NicolasEscrowV2 合约（托管 / 交付 / 确认 / 退款 / 仲裁）
+MySQL：订单、session、message、call、delivery、review、dispute、x402 settle 审计
 ```
 
 ---
@@ -1007,9 +1026,14 @@ Demo 必须展示完整闭环。
 ```text
 买家购买 Web3 Risk Analyst Agent
   ↓
-钱包 approve
+POST /market/agents/{id}/buy → 拿到 x402 challenge
   ↓
-createOrder，资金进入 Escrow
+OKX Wallet 弹窗：对 EIP-3009 transferWithAuthorization 一次签名
+（**买家不发链上交易、零 OKB、零 approve**）
+  ↓
+POST /market/orders/{id}/x402-settle → OKX paymaster 替买家上链
+  ↓
+资金进入平台收款钱包，订单 status=paid
   ↓
 平台创建 Agent Session
   ↓
@@ -1027,7 +1051,7 @@ markDelivered
   ↓
 买家 confirmDelivery
   ↓
-链上放款给卖家
+WeeklySettlementJob → operator 钱包链上放款给卖家
 ```
 
 ### 18.2 纠纷 Demo

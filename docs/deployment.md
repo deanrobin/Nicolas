@@ -152,12 +152,22 @@ certbot renew --dry-run
 | `PAYMENT_MODE` | `PLATFORM_WALLET` | 支付模式：`PLATFORM_WALLET`(V1) / `CONTRACT`(V2) |
 | `XLAYER_RPC_URL` | `https://rpc.xlayer.tech` | XLayer JSON-RPC |
 | `XLAYER_CHAIN_ID` | `196` | 196=主网，195=测试网 |
-| `XLAYER_USDT_ADDRESS` | (主网 USDT) | XLayer USDT ERC-20 合约地址 |
-| `PLATFORM_WALLET_ADDRESS` | — | 平台收款钱包地址（V1 收款） |
-| `PLATFORM_WALLET_PRIVATE_KEY` | — | **机密** 平台钱包私钥（V1 放款 Job 使用） |
+| `XLAYER_USDT_ADDRESS` | (主网 USDT) | XLayer 标准 USDT ERC-20（Legacy 兜底路径用） |
+| `CHAIN_XLAYER_USDT_GASFREE_ADDRESS` | `0x779ded…713736` | OKX GasFree paymaster wrapper（x402 主流程用） |
+| `PLATFORM_WALLET_ADDRESS` | — | 平台收款钱包地址（V1 收款；同时是 x402 `payTo`） |
+| `PLATFORM_WALLET_PRIVATE_KEY` | — | **机密** 平台钱包私钥（备用） |
+| `OPERATOR_ADDRESS` | — | Operator 钱包公开地址（V1 卖家放款执行钱包；V2 合约 owner） |
+| `OPERATOR_PRIVATE_KEY` | — | **机密** Operator 私钥（V1 `payout_execute_job` 用；V2 合约 owner/arbitrator） |
 | `PAYOUT_JOB_ENABLED` | `true` | 启用放款 Job |
+| `NICOLAS_PAYMENT_X402_ENABLED` | `true` | x402 主流程开关（关闭则只走 Legacy `submit-tx`） |
+| `NICOLAS_PAYMENT_X402_FACILITATOR_BASE_URL` | `https://web3.okx.com` | OKX Facilitator 根 URL |
+| `NICOLAS_PAYMENT_X402_TOKEN_ADDRESS` | `0x779ded…713736` | EIP-3009 paymaster wrapper |
+| `NICOLAS_PAYMENT_X402_NETWORK` | `eip155:196` | x402 CAIP-2 network 标识 |
+| `NICOLAS_PAYMENT_X402_SYNC_SETTLE` | `true` | OKX `/settle` 阻塞到上链确认才返回 |
+| `ONCHAINOS_API_KEY` | — | **机密** OK-ACCESS-KEY（x402 verify+settle 必填） |
+| `ONCHAINOS_API_SECRET` | — | **机密** HMAC-SHA256 签名密钥（x402 verify+settle 必填） |
+| `ONCHAINOS_PASSPHRASE` | — | **机密** OK-ACCESS-PASSPHRASE（x402 verify+settle 必填） |
 | `ESCROW_CONTRACT_ADDRESS` | — | NicolasEscrowV2 合约地址（V2 升级后使用） |
-| `OPERATOR_PRIVATE_KEY` | — | **机密** 合约 owner / arbitrator 私钥（V2 升级后使用） |
 
 ---
 

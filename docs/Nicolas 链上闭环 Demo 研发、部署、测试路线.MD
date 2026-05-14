@@ -1,11 +1,13 @@
 # Nicolas Demo 托管交易闭环研发、部署、测试路线
 
-版本：v0.3（V1 平台钱包托管方案）
+版本：v0.4（V1 = x402 入账 + 平台钱包托管 + Operator 钱包放款）
 项目路径：`/root/Nicolas`  
-Demo 目标：演讲现场展示 **Agent 服务市场 + 平台钱包托管交易闭环 + Agent 审核 / 客服 / 纠纷预审 + Admin 后台仲裁放款** 的完整闭环。
+Demo 目标：演讲现场展示 **Agent 服务市场 + x402 免 gas 一键签名支付 + 平台钱包托管交易闭环 + Agent 审核 / 客服 / 纠纷预审 + Admin 后台仲裁放款** 的完整闭环。
 
-> V1 Demo 使用**平台钱包托管 + Java DB Ledger + Job 放款**，不依赖智能合约作为 P0 前置。
-> 合约方案（NicolasEscrowV2）作为 V2 升级路径，不在本次 Demo P0 范围内。
+> V1 Demo 买家入账走 **x402（HTTP 402 + OKX Facilitator）**：买家在 OKX Wallet 内对
+> EIP-3009 typed-data 签一次名，OKX paymaster 替买家上链并替付 gas，syncSettle 同步返回
+> tx hash。订单托管由 Java DB Ledger 完成，放款由 operator 钱包 + Job 完成。
+> 不依赖自建智能合约作为 P0 前置；合约方案（NicolasEscrowV2）作为 V2 升级路径。
 > 详见：[Nicolas 支付托管 V1 平台钱包方案.MD](./Nicolas%20支付托管%20V1%20平台钱包方案.MD)
 
 ---
@@ -17,7 +19,7 @@ Demo 目标：演讲现场展示 **Agent 服务市场 + 平台钱包托管交易
 最终 Demo 应该展示两条主线：
 
 ```text
-主线 A：正常买卖闭环
+主线 A：正常买卖闭环（x402 主流程）
 
 商家上架 Agent
   ↓
@@ -25,37 +27,49 @@ review_agent 自动审核
   ↓
 Admin 后台快速通过
   ↓
-买家购买 Agent 服务
+买家购买 Agent 服务（POST /market/agents/{id}/buy）
   ↓
-Java 返回平台收款钱包地址、Token、金额、chain_id
+Java 创建 payment_order，返回 x402 challenge：
+  { x402Version, accepts:[{ scheme:"exact", network:"eip155:196",
+    asset:<USD₮0 paymaster wrapper>, payTo:<平台收款钱包>, amount, ... }] }
   ↓
-买家向平台钱包转账，提交 tx_hash
+前端 X402PayModal 弹窗 → OKX Wallet 签 EIP-3009 transferWithAuthorization
+（typed-data 离线签名，**不发链上交易，零 gas**）
   ↓
-deposit_verify_job 校验入账（Token Transfer）
+前端 POST /market/orders/{id}/x402-settle  body: { paymentPayload }
   ↓
-payment_ledger 资金锁定，订单进入 ESCROW_HELD
+X402PaymentService sanityCheck → OKX /verify → OKX /settle
+（OKX paymaster 替买家广播链上 USDT Transfer 并替付 gas，
+ syncSettle 同步返回 tx_hash）
   ↓
-卖家执行 Agent 服务并提交交付
+独立 RPC eth_getTransactionReceipt 校验 → status = paid
+（receipt 暂不可见时由 PaymentConfirmationJob 兜底）
   ↓
-买家确认交付（或超时自动确认）
+payment_ledger 资金锁定，订单进入 paid
   ↓
-Java 创建 payout_job
+卖家执行 Agent 服务并提交交付（delivered）
   ↓
-payout_execute_job 用平台钱包执行放款给卖家
+买家确认交付（或超时自动确认）→ confirmed
   ↓
-订单进入 COMPLETED
+WeeklySettlementJob.cutoff（默认每周五 12:00）→ settle_pending
+  ↓
+WeeklySettlementJob.payout（默认每周日 12:00）创建 payout_job
+  ↓
+payout_execute_job 用 OPERATOR_PRIVATE_KEY 链上转账给卖家
+  ↓
+payout_confirm_job 确认上链 → 订单进入 completed
 ```
 
 ```text
 主线 B：纠纷仲裁闭环
 
-买家购买 Agent 服务
+买家完成 x402 支付（同主线 A 步骤 1-7）
   ↓
-资金进入平台钱包（payment_ledger 锁定）
+USDT 进入平台钱包，payment_ledger 锁定
   ↓
 卖家交付
   ↓
-买家不满意，通过平台发起纠纷
+买家不满意，通过平台发起纠纷（POST /market/orders/{id}/disputes）
   ↓
 support_agent 判断为售后 / 退款问题
   ↓
@@ -67,10 +81,13 @@ Admin 后台确认裁决结果
   ↓
 Java 创建 refund_job / split_payout_job
   ↓
-payout_execute_job 用平台钱包执行退款 / 放款
+payout_execute_job 用 operator 钱包执行退款 / 放款
   ↓
-订单进入 REFUNDED / PARTIALLY_REFUNDED / COMPLETED
+订单进入 refunded / partially_refunded / completed
 ```
+
+> Legacy 兜底（x402 不可用时）：买家在自己钱包发 USDT 到平台钱包，POST `/submit-tx`
+> 提交 tx_hash，由 `PaymentConfirmationJob` 校验入账。仅作为降级路径，不作为对外宣传体验。
 
 ---
 
@@ -86,12 +103,14 @@ Nicolas 不是一个单纯的 Agent 聊天平台。
 1. 买卖前：
    review_agent 审核商家和 Agent / Skill，防止低质量或高风险服务上架。
 
-2. 买卖中（V1 平台钱包托管）：
-   用户支付的 Token 进入平台收款钱包，由平台 DB Ledger 锁定，不直接打给卖家。
-   Java Job 校验入账，订单状态变为 ESCROW_HELD。
+2. 买卖中（x402 + 平台钱包托管）：
+   买家在 OKX Wallet 内一次签名，OKX paymaster 替他上链并替付 gas，
+   USDT 进入平台收款钱包，由平台 DB Ledger 锁定，不直接打给卖家。
+   PaymentConfirmationJob 兜底校验入账，订单状态变为 paid。
 
 3. 买卖后：
-   卖家交付后，买家确认，Java Job 自动执行链上放款给卖家。
+   卖家交付后，买家确认。WeeklySettlementJob 在每周固定时间窗口内
+   通过 operator 钱包链上放款给卖家。
 
 4. 出现纠纷：
    support_agent 负责客服分流，dispute_agent 给出仲裁建议。
@@ -102,8 +121,10 @@ Nicolas 不是一个单纯的 Agent 聊天平台。
 核心价值：
 
 ```text
-Agent 做平台治理
+x402 做买家入账：免 gas，一次签名，体验对齐 Web2
 平台钱包 + DB Ledger 做资金托管（V1）/ 智能合约做资金托管（V2）
+Operator 钱包 + Job 做卖家放款（V1）/ 合约 confirmDelivery（V2）
+Agent 做平台治理
 Admin 做最终风险控制
 ```
 
@@ -112,48 +133,69 @@ Admin 做最终风险控制
 ## 3. 总体技术架构
 
 ```text
-Frontend
+Frontend (X402PayModal + OKX Wallet)
+  ↓ EIP-712 离线签名
+Java Backend (X402PaymentService)
+  ↓ HMAC-signed REST
+OKX Facilitator (web3.okx.com /pay/x402/verify+settle)
+  ↓ paymaster 替买家上链
+平台收款钱包 (USDT 入账)
   ↓
-Java Backend
-  ↓
-Python Agent Orchestrator
-  ↓
-review_agent / support_agent / dispute_agent
-
-买家转账给平台钱包（链上真实 Token 转账）
-  ↓
-Java deposit_verify_job 校验
+PaymentConfirmationJob 校验
   ↓
 DB payment_ledger 锁定资金
-
-Java payout_execute_job
   ↓
-平台钱包链上转账放款 / 退款
+WeeklySettlementJob (cutoff/payout)
+  ↓
+Java payout_execute_job (用 OPERATOR_PRIVATE_KEY)
+  ↓
+operator 钱包链上转账放款 / 退款
   ↓
 payout_confirm_job 确认链上状态
+
+旁路：Python Agent Orchestrator
+  ↓
+review_agent / support_agent / dispute_agent
+（仅生成审核 / 客服 / 纠纷建议，不直接碰钱）
 ```
 
-更完整视图（V1 平台钱包托管）：
+更完整视图（V1 = x402 入账 + 平台钱包托管 + Operator 放款）：
 
 ```text
-                       ┌────────────────────┐
-                       │      Frontend       │
-                       │ React + Wallet      │
-                       └─────────┬──────────┘
+                       ┌────────────────────────┐
+                       │       Frontend          │
+                       │ React + X402PayModal    │
+                       └─────────┬──────────────┘
                                  │
-                  ┌──────────────┴──────────────┐
-                  │                             │
-                  ▼                             ▼
-        ┌──────────────────┐         ┌──────────────────────┐
-        │   Java Backend    │         │   买家钱包             │
-        │ 业务 / 订单 / API │         │ 向平台钱包 Token 转账   │
-        └─────────┬────────┘         └──────────┬───────────┘
-                  │                             │
-                  ▼                             ▼
-        ┌──────────────────┐         ┌──────────────────────┐
-        │ Python Agent      │         │ 平台收款钱包            │
-        │ Orchestrator      │         │ Token 接收 / 放款 / 退款│
-        └─────────┬────────┘         └──────────┬───────────┘
+                  ┌──────────────┴──────────────────┐
+                  │                                  │
+                  ▼                                  ▼
+        ┌──────────────────┐              ┌──────────────────────┐
+        │   Java Backend    │              │   OKX Wallet (买家)   │
+        │ X402PaymentService│              │ 对 EIP-3009 typed-data │
+        │ + 业务 / 订单 / API│              │ 做离线签名，零 gas      │
+        └─────────┬────────┘              └──────────┬───────────┘
+                  │                                  │
+                  ├─→ POST /verify+/settle ──────→ OKX Facilitator (web3.okx.com)
+                  │   HMAC-signed (ONCHAINOS keys)    │
+                  │                                   ▼
+                  │                       ┌──────────────────────┐
+                  │                       │ OKX Paymaster (relayer)│
+                  │                       │ 替买家广播链上 Transfer │
+                  │                       │ 并替付 OKB gas         │
+                  │                       └──────────┬───────────┘
+                  │                                   │
+                  ▼                                   ▼
+        ┌──────────────────┐              ┌──────────────────────┐
+        │ Python Agent      │              │ 平台收款钱包           │
+        │ Orchestrator      │              │ USDT 入账（payTo）     │
+        └─────────┬────────┘              └──────────┬───────────┘
+                  │                                  │
+                  │                                  ▼
+                  │                       ┌──────────────────────┐
+                  │                       │ Operator 钱包          │
+                  │                       │ Job 放款给卖家         │
+                  │                       └──────────┬───────────┘
                   │                             │
        ┌──────────┼──────────┐                  │
        ▼          ▼          ▼                  ▼
@@ -222,26 +264,33 @@ payout_confirm_job 确认链上状态
 
 ```text
 [ ] platform_wallet_config 表：配置平台收款钱包地址、Token、chain_id
-[ ] payment_orders 表：创建支付订单，返回收款钱包、金额、token、chain_id
-[ ] 前端展示付款信息（钱包地址 + 金额 + Token + 二维码 / 链接）
-[ ] 买家向平台钱包转账，提交 tx_hash
-[ ] deposit_verify_job：校验 tx_hash 是否是合法 Token Transfer 到账
+[ ] payment_orders 表：创建支付订单，记录 buyer_wallet 快照
+[ ] 下单接口返回 x402 challenge（accepts: paymentRequirements）
+[ ] 前端 X402PayModal：调 OKX Wallet eth_signTypedData_v4 签 EIP-3009 typed-data
+[ ] OkxFacilitatorClient：HMAC-SHA256 签名后 POST /verify + /settle
+[ ] X402PaymentService.settle：sanityCheck + verify + settle + 独立 receipt 校验
+[ ] PaymentConfirmationJob 兜底：未即时确认订单的链上 receipt 轮询
 [ ] wallet_transactions 入账记录
 [ ] payment_ledger：资金锁定状态（DEBIT 入账记录）
-[ ] 订单状态流转：PAYMENT_SUBMITTED → ESCROW_HELD
-[ ] Agent 执行服务，卖家提交 delivery
-[ ] 买家确认 / 超时自动确认（auto_release_job）
-[ ] Java 创建 payout_job / refund_job
-[ ] payout_execute_job：平台钱包链上转账放款 / 退款
-[ ] payout_confirm_job：确认链上交易，更新订单状态
+[ ] 订单状态流转：pending_payment → confirming → paid
+[ ] Agent 执行服务，卖家提交 delivery → delivered
+[ ] 买家确认 / 超时自动确认（auto_release_job）→ confirmed
+[ ] WeeklySettlementJob.cutoff：周结切到 settle_pending
+[ ] WeeklySettlementJob.payout：周结生成 payout_job
+[ ] payout_execute_job：用 OPERATOR_PRIVATE_KEY 链上转账放款 / 退款
+[ ] payout_confirm_job：确认链上交易，更新订单状态 → completed
 [ ] payment_ledger：放款 / 退款记录（CREDIT 出账记录）
 [ ] support_agent 识别退款 / 售后问题
 [ ] dispute_agent 输出仲裁建议（含 refund_amount / payout_amount）
 [ ] Admin 后台确认纠纷裁决，生成 refund_job / split_payout_job
 [ ] 前端展示订单状态、资金流水、放款 tx_hash
+[ ] Legacy 兜底：保留 POST /market/orders/{id}/submit-tx + ManualPayModal
 ```
 
-> **V2 范围（不在 P0）**：AgentEscrow 合约、approve Token、createOrder、markDelivered、confirmDelivery（合约调用）、resolveDispute（合约调用）、event indexer。详见 [NicolasEscrowV2 合约设计方案.MD](./NicolasEscrowV2%20合约设计方案.MD)。
+> **V2 范围（不在 P0）**：自建 NicolasEscrowV2 合约、买家 approve Token、买家调
+> createOrder、链上 markDelivered / confirmDelivery / resolveDispute、event indexer。
+> 详见 [NicolasEscrowV2 合约设计方案.MD](./NicolasEscrowV2%20合约设计方案.MD)。
+> 注意：x402 入账侧到 V2 仍可保留，仅把 `payTo` 切换到合约 entrypoint。
 
 ---
 
@@ -280,26 +329,56 @@ payout_confirm_job 确认链上状态
 
 ## 6. 研发路线
 
-## 6.1 第一阶段（V1）：平台钱包收款配置
+## 6.1 第一阶段（V1）：平台收款钱包 + OKX Facilitator 凭证配置
 
-V1 不需要部署智能合约，直接配置平台收款钱包：
-
-```text
-平台运营方持有一个 EVM 钱包地址作为收款地址
-配置进 platform_wallet_config 表
-Java 读取并在创建支付订单时返回给买家
-```
-
-配置示例（`platform_wallet_config` 表记录）：
+V1 不需要部署智能合约，需要配置两件事：
 
 ```text
-chain_id = 196（XLayer 主网）
-token_address = 0x1E4a5963aBFD975d8c9021ce480b42188849D41d（USDT）
-wallet_address = 0x你的收款地址
-daily_limit = 1000（USDT）
-single_tx_limit = 100（USDT）
-enabled = true
+1. 平台收款钱包地址（payTo）+ Operator 钱包私钥（放款用）
+2. OKX Facilitator 凭证（x402 主流程依赖）
 ```
+
+### 平台 / Operator 钱包
+
+```text
+平台运营方持有一个 EVM 钱包作为：
+  - x402 paymentRequirements.payTo（买家入账目标）
+  - operator 放款执行钱包（OPERATOR_PRIVATE_KEY 签名链上转账）
+```
+
+配置示例（`platform_wallet_config` 表记录 + 环境变量）：
+
+```text
+chain_id           = 196（XLayer 主网）
+token_address      = 0x779ded0c9e1022225f8e0630b35a9b54be713736
+                     （OKX GasFree paymaster wrapper / USD₮0；
+                      Legacy 兜底路径同时认 0x1E4a5963aBFD975d8c9021ce480b42188849D41d）
+wallet_address     = 0x你的收款地址
+daily_limit        = 1000（USDT）
+single_tx_limit    = 100（USDT）
+enabled            = true
+
+# 服务器 env
+PLATFORM_WALLET_ADDRESS = 0x你的收款地址
+OPERATOR_ADDRESS        = 0x你的运营方钱包地址
+OPERATOR_PRIVATE_KEY    = 0x...（机密；放款 Job 用）
+```
+
+### OKX Facilitator 凭证（x402 主流程必填）
+
+```text
+ONCHAINOS_API_KEY     = （OKX OnchainOS 同一账号的 OK-ACCESS-KEY）
+ONCHAINOS_API_SECRET  = （HMAC-SHA256 签名密钥）
+ONCHAINOS_PASSPHRASE  = （OK-ACCESS-PASSPHRASE）
+
+nicolas.payment.x402.enabled              = true
+nicolas.payment.x402.facilitator-base-url = https://web3.okx.com
+nicolas.payment.x402.token-address        = 0x779ded0c9e1022225f8e0630b35a9b54be713736
+nicolas.payment.x402.network              = eip155:196
+nicolas.payment.x402.sync-settle          = true
+```
+
+凭证缺失时后端会自动 disable x402，前端回退到 Legacy 手动转账（§6.6.x）。
 
 > V2 合约部署说明请参考：[NicolasEscrowV2 合约设计方案.MD](./NicolasEscrowV2%20合约设计方案.MD)
 
@@ -321,10 +400,15 @@ CREATE TABLE payment_orders (
     chain_id BIGINT NOT NULL,
     amount DECIMAL(36,18) NOT NULL,
     status VARCHAR(32) NOT NULL,
-    -- CREATED / WAITING_PAYMENT / PAYMENT_SUBMITTED / ESCROW_HELD
-    -- IN_SERVICE / DELIVERED / CONFIRMED / PAYOUT_PENDING / COMPLETED
-    -- DISPUTED / REFUND_PENDING / REFUNDED / PARTIALLY_REFUNDED / FAILED_NEED_MANUAL
-    deposit_tx_hash VARCHAR(66) NULL,
+    -- pending_payment / confirming / paid
+    -- in_service / delivered / confirmed
+    -- settle_pending / paying_out / completed
+    -- disputed / refund_pending / refunded / partially_refunded / failed_need_manual
+    tx_hash VARCHAR(66) NULL UNIQUE,            -- 全局唯一，防止跨订单复用
+    tx_from_address VARCHAR(42) NULL,           -- Transfer log 真实付款人（gasfree 路径下 ≠ receipt.from）
+    tx_nonce BIGINT NULL,                       -- 审计用
+    x402_signer_address VARCHAR(42) NULL,       -- EIP-3009 授权人 = paymentPayload.payload.authorization.from
+    x402_settled_at DATETIME NULL,              -- OKX /settle 同步返回时的时间戳
     expire_at DATETIME NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -415,10 +499,13 @@ CREATE TABLE payout_jobs (
 建议模块：
 
 ```text
-PaymentConfig.java
-PaymentOrderService.java
-DepositVerifyJob.java
-WalletScanJob.java
+PaymentConfig.java               (含内嵌 X402 子配置)
+PaymentService.java              (订单生命周期 + Legacy submit-tx)
+X402PaymentService.java          (x402 主流程 sanityCheck + verify + settle + 独立 receipt)
+OkxFacilitatorClient.java        (HMAC-signed POST web3.okx.com /pay/x402/{verify,settle})
+PaymentConfirmationJob.java      (兜底确认未即时到账的订单)
+WalletScanJob.java               (Legacy 兜底主动扫描)
+WeeklySettlementJob.java         (cutoff + payout 双 cron)
 PayoutExecuteJob.java
 PayoutConfirmJob.java
 AutoReleaseJob.java
@@ -429,25 +516,46 @@ PaymentLedgerService.java
 
 ```text
 PaymentConfig
-  读取 chainId、rpcUrl、platformWalletAddress、tokenAddress
+  读取 chainId、rpcUrl、platformWalletAddress、operatorAddress、x402.* 子配置
 
-PaymentOrderService
-  创建 payment_order，返回收款钱包信息给买家
+PaymentService
+  创建 payment_order，返回 x402 challenge（accepts: paymentRequirements）
+  保留 submitTxHash 入口供 Legacy 兜底
 
-DepositVerifyJob
-  校验买家提交的 tx_hash：token 地址、to 地址、金额、confirmations
-  写入 wallet_transactions + payment_ledger
-  更新订单状态为 ESCROW_HELD
+X402PaymentService.settle
+  1) sanityCheck（signer / payTo / value）
+  2) OkxFacilitatorClient.verify
+  3) OkxFacilitatorClient.settle (syncSettle=true)
+  4) 落 tx_hash + x402_signer + x402_settled_at，status=confirming
+  5) sleep ~1s 后 eth_getTransactionReceipt 独立确认 → status=paid
 
-WalletScanJob（可选）
-  主动扫描平台钱包入账，防止买家未提交 tx_hash
+OkxFacilitatorClient
+  HMAC-SHA256(secret, ts+POST+path+body) 签名
+  POST web3.okx.com/api/v6/pay/x402/verify
+  POST web3.okx.com/api/v6/pay/x402/settle
+
+PaymentConfirmationJob
+  每 30s 扫描 confirming 订单
+  确认 USDT.Transfer 合约地址 / Transfer.from / Transfer.to / 金额
+  Transfer.from（topic[1]）== buyer_wallet（gasfree 路径下不要看 receipt.from）
+  receipt.status=0x1 + confirmations 达标 → status=paid
+  receipt.status=0x0 → 回滚 pending_payment
+
+WalletScanJob（可选 Legacy 兜底）
+  主动扫描平台钱包入账，配合 submit-tx 路径
+
+WeeklySettlementJob.cutoff
+  默认每周五 12:00：把 paid+无 dispute 的订单切到 settle_pending
+
+WeeklySettlementJob.payout
+  默认每周日 12:00：在 payoutWindowHours（默认 8h）内匀速生成 payout_job
 
 PayoutExecuteJob
-  读取 payout_jobs，用平台钱包执行链上转账放款 / 退款
+  读取 payout_jobs，用 OPERATOR_PRIVATE_KEY 执行链上转账放款 / 退款
   支持指数退避重试
 
 PayoutConfirmJob
-  查询放款 tx 确认数，更新订单最终状态（COMPLETED / REFUNDED）
+  查询放款 tx 确认数，更新订单最终状态（completed / refunded）
 
 AutoReleaseJob
   交付超期自动确认，创建 payout_job
@@ -459,10 +567,11 @@ PaymentLedgerService
 建议边界：
 
 ```text
-买家：只需要链上转账，不需要 approve 或调用合约
-卖家放款：由 Java PayoutExecuteJob 代执行，使用平台钱包私钥
+买家：x402 主流程下只在 OKX Wallet 内对 typed-data 签一次名，不发链上交易、零 OKB
+卖家放款：由 PayoutExecuteJob 代执行，使用 OPERATOR_PRIVATE_KEY
 退款：同 PayoutExecuteJob，发送到买家地址
 Admin 仲裁：Admin 确认后 Java 创建 split_payout_job
+Legacy 兜底：买家自己发 USDT 到平台钱包并提交 tx_hash（自付 OKB gas）
 ```
 
 ---
@@ -524,17 +633,11 @@ Agent 不直接调用合约
 
 ## 6.6 第六阶段：前端钱包和链上页面
 
-建议安装：
+建议安装（V1 + x402 不依赖 wagmi/viem 的合约调用，只用钱包注入对象做 typed-data 签名即可）：
 
 ```bash
 cd /root/Nicolas/frontend
-npm install viem wagmi @tanstack/react-query
-```
-
-如果为了最快 Demo，也可以使用：
-
-```bash
-npm install ethers
+npm install ethers      # 仅用于 EIP-712 typed-data 助手 + 地址校验
 ```
 
 建议新增目录：
@@ -542,11 +645,8 @@ npm install ethers
 ```text
 /root/Nicolas/frontend/src/web3/
   chains.ts
-  contracts.ts
-  escrowAbi.ts
-  erc20Abi.ts
-  useWallet.ts
-  useEscrowOrder.ts
+  okxWallet.ts          (window.okxwallet provider 抽象)
+  eip3009.ts            (typed-data 构造 + nonce 随机)
 ```
 
 建议新增组件：
@@ -554,8 +654,8 @@ npm install ethers
 ```text
 WalletConnectButton
 ChainSwitcher
-TokenApproveButton
-CreateOrderButton
+X402PayModal           (x402 主流程：签名 + 提交 paymentPayload)
+ManualPayModal         (Legacy 兜底：x402 不可用时手动转账 + 贴 tx_hash)
 OrderOnchainStatus
 ConfirmDeliveryButton
 RaiseDisputeButton
@@ -572,17 +672,26 @@ AdminReviewPage
 AdminDisputePage
 ```
 
-前端买家流程：
+前端买家流程（x402 主流程）：
 
 ```text
-1. 连接钱包
-2. 检查 chainId
-3. 如果不在目标链，提示切换网络
-4. 查询 Token allowance
-5. allowance 不够 → 调用 ERC20.approve(escrow, amount)
-6. approve 成功 → 调用 AgentEscrow.createOrder
-7. 交易成功后，把 tx_hash 提交给 Java
-8. Java 查询回执并记录订单
+1. 连接钱包（建议 OKX Wallet）
+2. 检查 chainId（XLayer 196）；不对 → 提示切链
+3. 点 Buy → POST /market/{skills|agents}/{id}/buy
+   响应里拿 data.order + data.x402 (paymentRequirements)
+4. 组装 EIP-712 typed-data：
+   - domain: { name:"USD₮0", version:"1", chainId:196,
+              verifyingContract:0x779ded…713736 }
+   - primaryType: "TransferWithAuthorization"
+   - message: { from:<买家钱包>, to:<payTo>, value:<amount>,
+               validAfter:0, validBefore:now+600, nonce:random32 }
+5. 调 wallet.request({ method:"eth_signTypedData_v4", params:[from, JSON] })
+   → 钱包**只签名，不上链，不付 gas**
+6. POST /market/orders/{id}/x402-settle  body:{ paymentPayload }
+   后端转 OKX → paymaster 上链 → 返回 paid 订单
+7. 跳转到 OrderDetailPage 展示 tx_hash + 链上状态
+
+兜底（data.x402 缺失时）：弹 ManualPayModal，让买家自己发 USDT 后贴 tx_hash。
 ```
 
 ---
@@ -591,61 +700,112 @@ AdminDisputePage
 
 参考完整定义：[Nicolas 支付托管 V1 平台钱包方案.MD](./Nicolas%20支付托管%20V1%20平台钱包方案.MD) 第 7 节。
 
-## 7.1 创建订单，返回收款信息
+## 7.1 创建订单，返回 x402 challenge
 
 ```text
-POST /api/orders
+POST /market/skills/{id}/buy
+POST /market/agents/{id}/buy
 ```
 
-返回：
+响应（启用 x402 时）：
 
 ```json
 {
-  "order_id": "order_001",
-  "chain_id": 196,
-  "payment_wallet": "0x平台收款钱包...",
-  "token_address": "0xUSDT...",
-  "amount": "0.5",
-  "expire_at": "2026-05-06T12:00:00Z"
+  "code": 200,
+  "data": {
+    "order": {
+      "id": 123,
+      "status": "pending_payment",
+      "amountUsdt": "0.5",
+      "platformWalletAddress": "0x平台收款钱包..."
+    },
+    "x402": {
+      "x402Version": 2,
+      "error": "payment_required",
+      "accepts": [{
+        "scheme": "exact",
+        "network": "eip155:196",
+        "amount": "500000",
+        "asset": "0x779ded0c9e1022225f8e0630b35a9b54be713736",
+        "payTo": "0x平台收款钱包...",
+        "maxTimeoutSeconds": 600,
+        "extra": { "name": "USD₮0", "version": "1" }
+      }]
+    }
+  }
 }
 ```
 
-前端展示给买家：向上述地址转账指定金额的 USDT（不需要 approve，不需要调用合约）。
+前端把 `accepts[0]` 拿去构造 EIP-712 typed-data 让 OKX Wallet 签名。
+若 `data.x402` 缺失（OKX 凭证未配 / 服务端 disable），回退到 §7.2.x Legacy 兜底。
 
 ---
 
-## 7.2 买家提交付款 tx_hash
+## 7.2 买家提交 x402 paymentPayload（主流程）
 
 ```text
-POST /api/orders/{orderId}/payment/tx
+POST /market/orders/{id}/x402-settle
 ```
 
 请求：
 
 ```json
 {
-  "tx_hash": "0x..."
+  "paymentPayload": {
+    "x402Version": 2,
+    "scheme": "exact",
+    "network": "eip155:196",
+    "payload": {
+      "signature": "0x<EIP-712 签名>",
+      "authorization": {
+        "from":  "0x<买家钱包>",
+        "to":    "0x<平台收款钱包>",
+        "value": "500000",
+        "validAfter":  "0",
+        "validBefore": "1715686800",
+        "nonce": "0x<32 字节随机>"
+      }
+    }
+  }
 }
 ```
 
-Java 处理（deposit_verify_job）：
+Java 处理（X402PaymentService.settle）：
 
 ```text
-1. 查询 tx receipt
-2. 确认是 Token Transfer，to = 平台收款钱包
-3. 确认 token_address 和 amount 匹配
-4. 确认 confirmations 足够
-5. 写入 wallet_transactions
-6. 写入 payment_ledger（DEBIT 入账锁定）
-7. 更新 payment_order.status = ESCROW_HELD
+1. sanityCheck：authorization.from == buyer_wallet_address，
+                authorization.to   == platformWallet，
+                authorization.value == order.amount
+2. OkxFacilitatorClient.verify (HMAC POST /api/v6/pay/x402/verify)
+3. OkxFacilitatorClient.settle (HMAC POST /api/v6/pay/x402/settle, syncSettle=true)
+   → OKX paymaster 替买家广播链上 USDT Transfer 并替付 gas
+   → 同步返回 { transaction: tx_hash, ... }
+4. 写 tx_hash + x402_signer + x402_settled_at，status=confirming
+5. sleep ~1s（XLayer 块时间）后 eth_getTransactionReceipt 独立确认
+   → 写 tx_from_address，status=paid
+   → 兜底场景由 PaymentConfirmationJob 完成
 ```
+
+### 7.2.x Legacy 兜底：手动转账 + 提交 tx_hash
+
+```text
+POST /market/orders/{id}/submit-tx
+body: { "tx_hash": "0x..." }
+```
+
+`PaymentConfirmationJob` 每 30s 校验：
+1. receipt.status == 0x1
+2. 找到 USDT.Transfer 事件（`chain.xlayer.usdt-address` 或 `usdt-gasfree-address`）
+3. Transfer.to == platformWallet，amount 匹配
+4. Transfer.from（topic[1]）== order.buyer_wallet_address（gasfree 路径下 ≠ receipt.from）
+5. confirmations 达标 → status=paid
 
 ---
 
 ## 7.3 查询订单和支付状态
 
 ```text
-GET /api/orders/{id}
+GET /market/orders/{id}
 ```
 
 返回订单当前状态、交付状态、资金状态。
@@ -655,53 +815,54 @@ GET /api/orders/{id}
 ## 7.4 卖家提交交付
 
 ```text
-POST /api/orders/{id}/deliver
+POST /market/orders/{id}/deliver
 ```
 
 Java 处理：
 
 ```text
-更新 payment_order.status = DELIVERED
+更新 payment_order.status = delivered
 买家可以确认 / 发起纠纷 / 等待超时
 ```
 
 ---
 
-## 7.5 买家确认交付
+## 7.5 买家确认交付 → 周结放款
 
 ```text
-POST /api/orders/{id}/confirm
+POST /market/orders/{id}/confirm
 ```
 
 Java 处理：
 
 ```text
-更新状态为 CONFIRMED
-创建 payout_job（放款给卖家）
+更新状态为 confirmed
+等待 WeeklySettlementJob.cutoff（默认每周五 12:00）切到 settle_pending
+WeeklySettlementJob.payout（默认每周日 12:00）在 payoutWindowHours 内创建 payout_job
 ```
 
-`payout_execute_job` 读取 payout_job，用平台钱包执行链上转账：
+`payout_execute_job` 读取 payout_job，用 OPERATOR_PRIVATE_KEY 执行链上转账：
 
 ```text
-from: 平台收款钱包
-to: 卖家钱包
-amount: 订单金额
-token: USDT
+from: operator 钱包（OPERATOR_ADDRESS）
+to:   卖家钱包
+amount: 订单金额（已扣 platform fee）
+token:  USDT
 ```
 
 放款 tx 确认后：
 
 ```text
 payment_ledger 写入 CREDIT 出账记录
-payment_order.status = COMPLETED
+payment_order.status = completed
 ```
 
 演讲重点：
 
 ```text
-平台钱包余额减少
+平台钱包余额减少 → operator 钱包扣 USDT
 卖家 Token 余额增加
-Explorer 出现 Token Transfer（from 平台钱包 to 卖家）
+Explorer 出现 Token Transfer（from operator 钱包 to 卖家）
 ```
 
 ---
@@ -709,15 +870,16 @@ Explorer 出现 Token Transfer（from 平台钱包 to 卖家）
 ## 7.6 买家发起纠纷
 
 ```text
-POST /api/orders/{id}/disputes
+POST /market/orders/{id}/disputes
 ```
 
 Java 处理：
 
 ```text
-payment_order.status = DISPUTED
+payment_order.status = disputed
 创建 dispute_case
 调用 support_agent / dispute_agent
+注：disputed 状态会被 WeeklySettlementJob.cutoff 跳过，资金不会进入周结放款
 ```
 
 ---
@@ -831,7 +993,7 @@ Java Backend → Python Agent Orchestrator
 
 ---
 
-## 8.2 Java 环境变量（V1 平台钱包托管）
+## 8.2 Java 环境变量（V1 = x402 入账 + 平台钱包托管）
 
 ```ini
 Environment=SERVER_PORT=8080
@@ -848,14 +1010,35 @@ Environment=PAYMENT_MODE=PLATFORM_WALLET
 Environment=XLAYER_RPC_URL=https://rpc.xlayer.tech
 Environment=XLAYER_CHAIN_ID=196
 Environment=XLAYER_USDT_ADDRESS=0x1E4a5963aBFD975d8c9021ce480b42188849D41d
+# Legacy 兜底路径用标准 USDT；x402 主流程用下面的 gasfree wrapper
 
-# 平台收款钱包（V1 托管核心）
+# x402 主流程（OKX Facilitator）
+Environment=NICOLAS_PAYMENT_X402_ENABLED=true
+Environment=NICOLAS_PAYMENT_X402_FACILITATOR_BASE_URL=https://web3.okx.com
+Environment=NICOLAS_PAYMENT_X402_TOKEN_ADDRESS=0x779ded0c9e1022225f8e0630b35a9b54be713736
+Environment=NICOLAS_PAYMENT_X402_NETWORK=eip155:196
+Environment=NICOLAS_PAYMENT_X402_SYNC_SETTLE=true
+Environment=CHAIN_XLAYER_USDT_GASFREE_ADDRESS=0x779ded0c9e1022225f8e0630b35a9b54be713736
+
+# OKX Facilitator 凭证（缺失则后端自动 disable x402 → 前端走 Legacy）
+Environment=ONCHAINOS_API_KEY=你的 OKX OnchainOS Key
+Environment=ONCHAINOS_API_SECRET=你的 OKX OnchainOS Secret
+Environment=ONCHAINOS_PASSPHRASE=你的 OKX OnchainOS Passphrase
+
+# 平台收款钱包（V1 托管核心，x402 payTo）
 Environment=PLATFORM_WALLET_ADDRESS=0x你的平台收款钱包地址
 Environment=PLATFORM_WALLET_PRIVATE_KEY=平台钱包私钥（仅服务器env）
 
+# Operator 钱包（卖家放款 / 退款执行钱包）
+Environment=OPERATOR_ADDRESS=0x你的运营方钱包地址
+Environment=OPERATOR_PRIVATE_KEY=运营方钱包私钥（仅服务器env）
+
 # Job 配置
 Environment=PAYOUT_JOB_ENABLED=true
-Environment=DEPOSIT_VERIFY_MIN_CONFIRMATIONS=12
+Environment=NICOLAS_PAYMENT_CONFIRMATION_BLOCKS=3
+Environment=NICOLAS_PAYMENT_SETTLEMENT_CUTOFF_CRON=0 0 12 * * FRI
+Environment=NICOLAS_PAYMENT_SETTLEMENT_PAYOUT_CRON=0 0 12 * * SUN
+Environment=NICOLAS_PAYMENT_SETTLEMENT_PAYOUT_WINDOW_HOURS=8
 
 Environment=JWT_SECRET=换成强随机字符串
 Environment=MAIL_DEV_MODE=true
@@ -864,7 +1047,8 @@ Environment=MAIL_DEV_MODE=true
 安全注意：
 
 ```text
-PLATFORM_WALLET_PRIVATE_KEY 只能放在服务器 env，不能进 git / 日志 / DB。
+PLATFORM_WALLET_PRIVATE_KEY / OPERATOR_PRIVATE_KEY 只能放在服务器 env，不能进 git / 日志 / DB。
+ONCHAINOS_API_SECRET / _PASSPHRASE 同样视为机密，HMAC 仅在内存计算。
 Demo 建议平台钱包只保留演示所需的小额资金。
 正式生产环境建议热钱包 + 冷钱包分离，热钱包只保留日常放款额度。
 ```
@@ -879,12 +1063,14 @@ Demo 建议平台钱包只保留演示所需的小额资金。
 VITE_API_URL=https://你的域名/api
 VITE_CHAIN_ID=196
 VITE_XLAYER_RPC_URL=https://rpc.xlayer.tech
-VITE_PAYMENT_TOKEN_ADDRESS=0x1E4a5963aBFD975d8c9021ce480b42188849D41d
+VITE_PAYMENT_TOKEN_ADDRESS=0x779ded0c9e1022225f8e0630b35a9b54be713736
+# x402 主流程用 gasfree wrapper；Legacy 兜底时认 0x1E4a…41d
 VITE_PAYMENT_TOKEN_SYMBOL=USDT
 VITE_PAYMENT_TOKEN_DECIMALS=6
 ```
 
-前端 V1 不需要 ESCROW_CONTRACT_ADDRESS、approve 和合约调用相关配置。
+前端 V1 不需要 ESCROW_CONTRACT_ADDRESS、approve 和合约调用相关配置；
+x402 主流程靠 OKX Wallet 注入对象（`window.okxwallet`）做 EIP-712 签名即可。
 
 ---
 
@@ -1066,15 +1252,22 @@ mvn test
 必须覆盖：
 
 ```text
-[ ] PaymentOrderService.createOrder 返回正确收款信息
-[ ] DepositVerifyJob：tx_hash 校验通过，写入 payment_ledger
-[ ] DepositVerifyJob：to 地址不匹配，拒绝
-[ ] DepositVerifyJob：金额不足，拒绝
-[ ] DepositVerifyJob：confirmations 不足，等待
-[ ] PayoutExecuteJob：创建放款 job，执行链上转账
+[ ] PaymentService.createOrder 返回 x402 challenge（accepts: paymentRequirements）
+[ ] X402PaymentService.sanityCheck：signer != buyer_wallet，拒绝（403）
+[ ] X402PaymentService.sanityCheck：to != platformWallet，拒绝（400）
+[ ] X402PaymentService.sanityCheck：value != amount，拒绝（400）
+[ ] OkxFacilitatorClient.signedPost：HMAC 头组装正确，凭证缺失抛 BizException
+[ ] X402PaymentService.settle：OKX 返回成功 → status=confirming → receipt 0x1 → status=paid
+[ ] X402PaymentService.settle：OKX /verify isValid=false → BizException 透传 invalidReason
+[ ] X402PaymentService.settle：receipt.status=0x0 → 回滚到 pending_payment 并清 tx_hash
+[ ] PaymentConfirmationJob：兜底确认 confirming 中的订单，gasfree 路径下取 Transfer.from
+[ ] PaymentConfirmationJob：tx_hash 全局唯一，重复提交 409
+[ ] WeeklySettlementJob.cutoff：disputed 订单跳过，不进入 settle_pending
+[ ] PayoutExecuteJob：用 OPERATOR_PRIVATE_KEY 创建放款 job，执行链上转账
 [ ] PayoutExecuteJob：失败后指数退避重试
-[ ] PayoutExecuteJob：超过重试次数，进入 FAILED_NEED_MANUAL
-[ ] AutoReleaseJob：交付超期自动进入 PAYOUT_PENDING
+[ ] PayoutExecuteJob：超过重试次数，进入 failed_need_manual
+[ ] AutoReleaseJob：交付超期自动进入 confirmed
+[ ] Legacy 兜底：x402.enabled=false → buy 响应不含 x402 challenge → submit-tx 仍可用
 ```
 
 ---
@@ -1084,17 +1277,22 @@ mvn test
 使用本地账号和测试钱包：
 
 ```text
-1. 注册买家账号，绑定钱包
+1. 注册买家账号，绑定钱包（建议 OKX Wallet）
 2. 注册卖家账号，完成商家入驻
 3. 卖家上架 Agent，等待 review_agent 审核通过
-4. 买家下单，获取收款钱包信息
-5. 用测试钱包向平台钱包转账 USDT
-6. 提交 tx_hash，等待 deposit_verify_job 校验
-7. 确认订单进入 ESCROW_HELD
+4. 买家下单 → POST /market/agents/{id}/buy
+   响应包含 data.x402.accepts[0]
+5. 前端 X402PayModal 弹窗 → OKX Wallet 对 EIP-3009 typed-data 签名
+6. POST /market/orders/{id}/x402-settle
+   后端 sanityCheck → OKX /verify → /settle → 拿 tx_hash
+7. 等待 PaymentConfirmationJob 兜底确认（如未即时 paid）→ status=paid
 8. 卖家提交 delivery
-9. 买家确认，创建 payout_job
-10. 等待 payout_execute_job 执行放款
-11. 确认卖家收到 USDT
+9. 买家确认 → status=confirmed
+10. （Demo 把 cutoff/payout cron 改成每分钟一次方便演示）
+    WeeklySettlementJob.cutoff → settle_pending
+    WeeklySettlementJob.payout → 创建 payout_job
+11. payout_execute_job 用 OPERATOR_PRIVATE_KEY 执行放款，确认卖家收到 USDT
+12. （兜底测试）关闭 x402，重复一遍走 submit-tx 路径
 ```
 
 ---
@@ -1113,18 +1311,21 @@ mvn test
 检查项：
 
 ```text
-[ ] 平台收款钱包有足够 OKB（gas）
-[ ] 平台收款钱包地址配置正确
-[ ] USDT token 地址正确
+[ ] 平台收款钱包地址配置正确（PLATFORM_WALLET_ADDRESS == x402 payTo）
+[ ] Operator 钱包有足够 OKB gas（放款链上交易要付 OKB）
+[ ] Operator 钱包有足够 USDT（放款给卖家）
+[ ] x402 token 地址 = 0x779ded…713736（USD₮0 paymaster wrapper）
+[ ] OKX Facilitator 凭证 ONCHAINOS_API_KEY/_SECRET/_PASSPHRASE 配置正确
+[ ] x402 测试：发一笔 0.1 USDT 看 /verify + /settle 同步返回 tx_hash
 [ ] chainId = 196 正确
-[ ] buyer 钱包有 OKB gas 和 USDT
+[ ] buyer 钱包**不需要 OKB**（x402 由 paymaster 兜底），但要持有目标 USDT 数额
 [ ] seller 钱包地址正确
-[ ] 转账并提交 tx_hash 正常
-[ ] deposit_verify_job 正常校验
-[ ] 订单进入 ESCROW_HELD
-[ ] payout_execute_job 执行放款
+[ ] X402PaymentService 正常 settle，订单走到 paid
+[ ] WeeklySettlementJob cron 在 Demo 环境改成 30s/1min（演示加速）
+[ ] payout_execute_job 执行放款，operator → 卖家
 [ ] seller Token 余额增加
-[ ] Explorer 出现 Token Transfer（平台钱包 → 卖家）
+[ ] Explorer 出现 Token Transfer（OKX paymaster → 平台钱包，再 operator 钱包 → 卖家）
+[ ] Legacy 兜底也跑过一遍：把 x402 关掉，确认 ManualPayModal + submit-tx 还能闭环
 ```
 
 ---
@@ -1132,13 +1333,14 @@ mvn test
 ## 9.4 纠纷流程彩排
 
 ```text
-[ ] 买家发起纠纷，订单进入 DISPUTED
+[ ] 买家发起纠纷，订单进入 disputed
+[ ] WeeklySettlementJob.cutoff 跳过 disputed 订单（资金不进入周结放款）
 [ ] dispute_agent 生成仲裁建议
 [ ] Admin 后台可见纠纷 + 建议
 [ ] Admin 裁决（50% 退款）
 [ ] refund_job + payout_job 正常执行
 [ ] 买家收到退款，卖家收到部分放款
-[ ] 订单进入 PARTIALLY_REFUNDED
+[ ] 订单进入 partially_refunded
 ```
 
 ---
@@ -1199,7 +1401,7 @@ mysql -u nicolas -p nicolas
 查询：
 
 ```sql
-SELECT order_id, status, deposit_tx_hash, created_at
+SELECT order_id, status, tx_hash, x402_signer_address, x402_settled_at, tx_from_address, created_at
 FROM payment_orders
 ORDER BY id DESC
 LIMIT 10;
@@ -1236,34 +1438,41 @@ LIMIT 10;
 
 ## 10.1 正常买卖闭环
 
-现场主线：
+现场主线（x402 主流程）：
 
 ```text
 1. 打开 Nicolas 首页
-2. 登录买家账号
+2. 登录买家账号（已绑定 OKX Wallet）
 3. 进入 Agent 市场
 4. 选择一个已通过 review_agent 审核的 Agent
-5. 点击购买
-6. 前端显示付款信息：平台收款钱包地址 + USDT 金额 + 过期时间
-7. 买家用自己的钱包向平台钱包转账 USDT
-8. 买家提交转账 tx_hash
-9. deposit_verify_job 校验入账
-10. 前端显示”资金已托管（ESCROW_HELD）”
+5. 点击购买 → POST /market/agents/{id}/buy
+6. 前端 X402PayModal 弹窗：展示金额 / payTo / 网络 / token，
+   "Pay with x402 · 免 gas 一键签名"
+7. 买家点 Sign & pay → OKX Wallet 弹窗对 EIP-3009 typed-data 签名
+   （**钱包不要求 OKB gas，只是签名**）
+8. 前端 POST /market/orders/{id}/x402-settle
+9. 后端 X402PaymentService → OKX Facilitator /verify + /settle
+   → OKX paymaster 上链 → 同步返回 tx_hash → status=paid
+10. 前端显示"资金已托管（paid）" + tx_hash 链接
 11. 切换到卖家操作，提交 delivery
-12. 买家页面显示”卖家已交付”
-13. 买家点击确认交付
-14. Java 创建 payout_job
-15. payout_execute_job 用平台钱包链上放款给卖家
-16. 前端显示订单 Completed + 放款 tx_hash
-17. 打开 Explorer 展示 Token Transfer（平台钱包 → 卖家）
+12. 买家页面显示"卖家已交付"
+13. 买家点击确认交付 → status=confirmed
+14. （Demo 把 settlement cron 改快）
+    WeeklySettlementJob.cutoff → settle_pending
+    WeeklySettlementJob.payout → 创建 payout_job
+15. payout_execute_job 用 OPERATOR_PRIVATE_KEY 链上放款给卖家
+16. 前端显示订单 completed + 放款 tx_hash
+17. 打开 Explorer 展示两笔 Token Transfer：
+    a) OKX paymaster (relayer) → 平台收款钱包（x402 入账，买家不付 gas）
+    b) operator 钱包 → 卖家钱包（周结放款）
 ```
 
 演讲强调：
 
 ```text
-这不是平台内部记账。
-这是真实的链上 Token 转账托管。
-买家的钱先进入平台钱包，确认交付后平台再链上打给卖家。
+这不是平台内部记账，是真实的链上 Token 流。
+买家从头到尾没付一分钱 OKB gas，只在 OKX Wallet 内点了一次"Sign"。
+入账走 x402，出账走 operator 钱包，全程链上可验证。
 ```
 
 ---
@@ -1519,23 +1728,25 @@ mysql -u nicolas -p nicolas < /root/Nicolas/scripts/seed_demo_data.sql
 [ ] 前端首页可访问
 [ ] 登录正常
 [ ] 钱包绑定正常（OKX Web3 钱包）
-[ ] 买家下单，获取平台收款钱包地址
-[ ] 向平台钱包转账 USDT 正常
-[ ] 提交 tx_hash 正常
-[ ] deposit_verify_job 校验入账正常
-[ ] DB 中有 payment_orders + wallet_transactions + payment_ledger
-[ ] 订单状态流转到 ESCROW_HELD
+[ ] OKX Facilitator 凭证（ONCHAINOS_API_KEY/_SECRET/_PASSPHRASE）配置
+[ ] 买家下单接口返回 data.x402 challenge
+[ ] X402PayModal 弹窗 + OKX Wallet 签名 EIP-3009 typed-data 正常（不要求 OKB gas）
+[ ] x402-settle 接口转 OKX 成功，返回 tx_hash
+[ ] PaymentConfirmationJob 兜底确认正常（兜底场景）
+[ ] DB 中有 payment_orders（含 x402_signer / tx_hash）+ wallet_transactions + payment_ledger
+[ ] 订单状态流转到 paid
 [ ] 卖家提交 delivery
-[ ] 买家确认交付
-[ ] Java 创建 payout_job
-[ ] payout_execute_job 执行放款
+[ ] 买家确认交付 → confirmed
+[ ] WeeklySettlementJob.cutoff/payout 创建 payout_job
+[ ] payout_execute_job 用 OPERATOR_PRIVATE_KEY 执行放款
 [ ] seller Token 余额增加
-[ ] Explorer 出现 Token Transfer（平台钱包 → 卖家）
-[ ] raiseDispute（前端 + DB）正常
+[ ] Explorer 可查两笔 Transfer（OKX paymaster → 平台钱包；operator → 卖家）
+[ ] raiseDispute（前端 + DB）正常；disputed 订单不进周结
 [ ] dispute_agent 能生成仲裁建议
 [ ] Admin 裁决，生成 refund_job + payout_job
 [ ] 退款 / 部分退款执行正常
 [ ] 前端显示正确状态和 tx_hash
+[ ] Legacy 兜底：关闭 x402 后 ManualPayModal + submit-tx 仍可闭环
 [ ] 服务重启后自动恢复
 [ ] Demo 预置订单可用
 [ ] Demo Mode（Agent AI fallback）可用
@@ -1545,24 +1756,29 @@ mysql -u nicolas -p nicolas < /root/Nicolas/scripts/seed_demo_data.sql
 
 ## 14. 最终路线图
 
-## 第一步：先打通 V1 正常买卖
+## 第一步：先打通 V1 正常买卖（x402 主流程）
 
 ```text
-平台收款钱包配置
+平台收款钱包 + Operator 钱包 + OKX Facilitator 凭证配置
   ↓
-买家下单获取收款信息
+买家下单 → 后端返回 x402 challenge
   ↓
-买家向平台钱包转账 USDT
+OKX Wallet 签 EIP-3009 typed-data（零 gas）
   ↓
-deposit_verify_job 校验入账
+x402-settle → OKX paymaster 上链 → tx_hash 同步返回
   ↓
-payment_ledger 锁定
+PaymentConfirmationJob 兜底（必要时）
+  ↓
+payment_ledger 锁定（status=paid）
   ↓
 卖家交付
   ↓
 买家确认
   ↓
-payout_job 放款
+WeeklySettlementJob.cutoff → settle_pending
+WeeklySettlementJob.payout → payout_job
+  ↓
+payout_execute_job 用 operator 钱包放款
   ↓
 seller 收款（Explorer 可查）
 ```
@@ -1656,8 +1872,10 @@ X Layer RPC 连通，可以查询和执行链上 Token 转账。
 最终 Demo 叙事：
 
 ```text
-普通订单（V1）：
-  买家向平台钱包转账 → DB Ledger 锁定 → 卖家交付 → 买家确认 → Job 链上放款给卖家
+普通订单（V1，x402 主流程）：
+  买家在 OKX Wallet 内对 EIP-3009 typed-data 签名 → OKX paymaster 替买家上链
+  → 平台钱包入账 → DB Ledger 锁定 → 卖家交付 → 买家确认
+  → 周结 Job → operator 钱包链上放款给卖家
 
 纠纷订单（V1）：
   用户投诉 → 客服 Agent 分流 → 纠纷 Agent 建议 → Admin 裁决 → Job 退款 / 放款

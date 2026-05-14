@@ -235,8 +235,12 @@ export default function OrderHistoryPage() {
 
   return (
     <div style={{ padding: 32, maxWidth: 1200, margin: '0 auto' }}>
-      <Title level={2} style={{ marginTop: 0 }}>My orders</Title>
-      <Text type="secondary">
+      {/* Title + caption sit on the dark AppLayout canvas — colorize so
+          they don't disappear into the background. */}
+      <Title level={2} style={{ marginTop: 0, color: 'var(--parchment)' }}>
+        My orders
+      </Title>
+      <Text style={{ color: 'var(--muted-strong)' }}>
         Track payment, delivery, and feedback. You can rate or open a dispute as soon as the order is paid;
         rating a delivered order also confirms it for payout.
       </Text>

@@ -127,14 +127,14 @@ export default function RegisterSellerPage({ editMode = false }: Props) {
 
   return (
     <div style={{ maxWidth: 720, margin: '0 auto', padding: '32px 24px' }}>
-      <Title level={3}>
-        <ShopOutlined style={{ marginRight: 8 }} />
+      <Title level={3} style={{ color: 'var(--parchment)' }}>
+        <ShopOutlined style={{ marginRight: 8, color: 'var(--gold)' }} />
         {editMode ? '修改商家信息' : '成为商家'}{' '}
-        <Text type="secondary" style={{ fontSize: 16 }}>
+        <Text style={{ fontSize: 16, color: 'var(--muted-strong)' }}>
           · {editMode ? 'Edit Merchant Profile' : 'Become a Merchant'}
         </Text>
       </Title>
-      <Paragraph type="secondary" style={{ marginBottom: 24 }}>
+      <Paragraph style={{ marginBottom: 24, color: 'var(--muted-strong)' }}>
         {editMode
           ? '修改后保存即重新提交审核。审核期间可在 Dashboard 看到状态更新。'
           : '填写商家信息后由 AI 审核员按平台规则进行审核。审核通过后即可上架 Agent / Skill。'}

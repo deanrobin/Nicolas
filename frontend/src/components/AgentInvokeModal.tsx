@@ -40,15 +40,18 @@ export default function AgentInvokeModal({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Hydrate from `existing` whenever it changes — covers both "modal opened
-  // for a fresh order" and "modal reopened on a completed order".
+  // Re-seed from `existing` ONLY when the modal opens. Once open, local
+  // state is authoritative: after a successful Post the parent may
+  // briefly null its `invocation` (the order has flipped to `delivered`
+  // and the default-view logic stops resolving a usableOrder), and we
+  // must not let that wipe the answer the buyer is reading.
   useEffect(() => {
+    if (!open) return
     if (existing && existing.answer) {
       setQuestion(existing.question)
       setAnswer(existing.answer)
       setError(null)
     } else if (existing && existing.error) {
-      // Last attempt failed — show the buyer their previous question + error.
       setQuestion(existing.question)
       setAnswer(null)
       setError(existing.error)
@@ -58,9 +61,16 @@ export default function AgentInvokeModal({
       setError(null)
     }
     setSubmitting(false)
-  }, [existing, open])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
 
-  const hasCompleted = Boolean(existing?.answer)
+  /**
+   * Whether the buyer's call is done. Driven by LOCAL {@code answer} so that
+   * a successful Post immediately disables the form and the Post button —
+   * independent of whatever the parent's {@code existing} prop is doing
+   * after the post-invoke reload.
+   */
+  const hasCompleted = Boolean(answer)
 
   const handlePost = async () => {
     if (orderId == null) return
@@ -183,30 +193,37 @@ export default function AgentInvokeModal({
         <a onClick={onClose} style={{ cursor: 'pointer', padding: '4px 12px' }}>
           {hasCompleted ? 'Close' : 'Cancel'}
         </a>
-        {!hasCompleted && (
-          <button
-            type="button"
-            onClick={handlePost}
-            disabled={submitting || question.trim().length < 1}
-            style={{
-              padding: '6px 18px',
-              borderRadius: 6,
-              border: 'none',
-              background: submitting || question.trim().length < 1
-                ? '#d9d9d9'
-                : 'linear-gradient(135deg, #667eea, #764ba2)',
-              color: '#fff',
-              fontWeight: 600,
-              cursor: submitting || question.trim().length < 1 ? 'not-allowed' : 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-            }}
-          >
-            <SendOutlined />
-            {submitting ? 'Posting…' : 'Post'}
-          </button>
-        )}
+        {(() => {
+          // Render the Post button regardless of completion state — buyer
+          // requested it stay visible (greyed out) after success so the
+          // affordance is unambiguous, instead of disappearing.
+          const disabled = submitting || hasCompleted || question.trim().length < 1
+          const label = submitting ? 'Posting…' : hasCompleted ? 'Posted' : 'Post'
+          return (
+            <button
+              type="button"
+              onClick={handlePost}
+              disabled={disabled}
+              style={{
+                padding: '6px 18px',
+                borderRadius: 6,
+                border: 'none',
+                background: disabled
+                  ? '#d9d9d9'
+                  : 'linear-gradient(135deg, #667eea, #764ba2)',
+                color: disabled ? '#8c8c8c' : '#fff',
+                fontWeight: 600,
+                cursor: disabled ? 'not-allowed' : 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+              }}
+            >
+              <SendOutlined />
+              {label}
+            </button>
+          )
+        })()}
       </div>
     </Modal>
   )

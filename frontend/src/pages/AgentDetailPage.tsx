@@ -304,6 +304,22 @@ export default function AgentDetailPage() {
                     render: (v: string | null) => v
                       ? <Text code style={{ fontSize: 11 }}>{v.slice(0, 10)}…{v.slice(-6)}</Text>
                       : <Text type="secondary">—</Text> },
+                  {
+                    title: 'Action',
+                    key: 'action',
+                    width: 110,
+                    render: (_: unknown, o: PaymentOrder) => (
+                      <Button
+                        size="small"
+                        icon={<MessageOutlined />}
+                        onClick={() =>
+                          navigate(`/market/agents/${agentId}?order=${o.id}`)
+                        }
+                      >
+                        View item
+                      </Button>
+                    ),
+                  },
                 ]}
               />
               <Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 0, fontSize: 12 }}>
@@ -323,6 +339,12 @@ export default function AgentDetailPage() {
       />
 
       <AgentInvokeModal
+        // Re-mount the modal whenever the anchored order changes so its
+        // local Q&A state is replaced with the new order's record. Without
+        // this, clicking "View item" on a different order while the modal
+        // is already open would leave the previous order's text in place
+        // (the modal's seed-from-existing effect only runs on `open` flips).
+        key={focusedOrderId ?? 'live'}
         open={invokeOpen}
         orderId={usableOrder?.id ?? null}
         agent={agent}

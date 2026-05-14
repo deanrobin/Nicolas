@@ -97,11 +97,11 @@ export default function WalletPage() {
 
   return (
     <div style={{ maxWidth: 640, margin: '0 auto', padding: '32px 24px' }}>
-      <Title level={3}>
-        <WalletOutlined style={{ marginRight: 8 }} />
+      <Title level={3} style={{ color: 'var(--parchment)' }}>
+        <WalletOutlined style={{ marginRight: 8, color: 'var(--gold)' }} />
         Wallet Settings
       </Title>
-      <Paragraph type="secondary" style={{ marginBottom: 32 }}>
+      <Paragraph style={{ marginBottom: 32, color: 'var(--muted-strong)' }}>
         Connect your OKX Web3 wallet (EVM address) to place orders and receive payments on XLayer.
       </Paragraph>
 

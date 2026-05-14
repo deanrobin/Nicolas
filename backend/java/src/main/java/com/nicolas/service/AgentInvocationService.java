@@ -1,5 +1,7 @@
 package com.nicolas.service;
 
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONException;
 import com.alibaba.fastjson2.JSONObject;
 import com.nicolas.exception.BizException;
 import com.nicolas.model.entity.AgentInvocation;
@@ -10,7 +12,7 @@ import com.nicolas.repository.AgentListingRepository;
 import com.nicolas.repository.PaymentOrderRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -20,6 +22,7 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -31,20 +34,32 @@ import java.util.Optional;
  *   <li>Buyer pays via x402; order moves to {@code paid}.
  *   <li>Buyer opens the modal on the agent detail page, types a question,
  *       and submits. Frontend calls {@code POST /market/orders/{id}/invoke}.
- *   <li>This service validates ownership + state, calls Python
- *       {@code /api/ai/complete} with a system prompt synthesized from the
- *       agent's name / description / serviceInput / serviceOutput, persists
- *       the row, and transitions the order {@code paid → delivered}.
- *   <li>Buyer can then rate the order from My Orders, advancing it to
- *       {@code confirmed} (the existing review flow). Settlement proceeds
- *       on the next weekly cutoff.
+ *   <li>This service validates ownership + state, then POSTs the question
+ *       directly to the seller's {@link AgentListing#getApiEndpoint()} —
+ *       the same URL the merchant pasted when listing the agent. The seller
+ *       runs their own model / business logic and returns an answer.
+ *   <li>Service persists Q&A, transitions order {@code paid → delivered}.
+ *   <li>Buyer rates from My Orders, advancing it to {@code confirmed}
+ *       (the existing review flow). Settlement runs on the next weekly
+ *       cutoff.
  * </ol>
  *
- * <p>Failure path: if Python is unreachable / the AI errors / parsing fails,
- * the invocation row records {@link AgentInvocation#getError()} and the order
- * stays {@code paid} so the buyer can retry (the unique index on
- * {@code order_id} would prevent duplicates, so on retry we update the same
- * row instead of inserting a new one).
+ * <h2>Wire contract with the seller's endpoint</h2>
+ *
+ * <p>Request: {@code POST <apiEndpoint>} with JSON body
+ * <pre>{ "question": "...", "orderId": 123, "agentId": 45 }</pre>
+ *
+ * <p>Response: JSON object containing an answer under any of these keys
+ * (first hit wins): {@code answer}, {@code text}, {@code output},
+ * {@code result}, {@code message}, {@code reply}. If the response body is
+ * a JSON string, it's used as-is. If it's not JSON at all, the raw text
+ * body is treated as the answer (capped at {@link #MAX_ANSWER_LENGTH}).
+ *
+ * <p>Failure path: connection refused, timeout, non-2xx, malformed body —
+ * all caught and recorded in {@link AgentInvocation#getError()}. The
+ * order stays {@code paid} so the buyer can retry. The
+ * {@code uk_agent_invocations_order} unique index makes retries safe:
+ * we update the same row instead of inserting a new one.
  */
 @Service
 public class AgentInvocationService {
@@ -52,20 +67,24 @@ public class AgentInvocationService {
     private static final Logger log = LoggerFactory.getLogger(AgentInvocationService.class);
     private static final Duration TIMEOUT = Duration.ofSeconds(60);
     private static final int MAX_QUESTION_LENGTH = 5000;
+    private static final int MAX_ANSWER_LENGTH = 32_000;
     private static final int MAX_ERROR_LENGTH = 500;
+    /** Response keys to try, in order, when the body is a JSON object. */
+    private static final List<String> ANSWER_KEYS =
+            List.of("answer", "text", "output", "result", "message", "reply");
 
-    private final WebClient pythonClient;
+    private final WebClient httpClient;
     private final AgentInvocationRepository invocationRepo;
     private final PaymentOrderRepository orderRepo;
     private final AgentListingRepository agentRepo;
 
     public AgentInvocationService(
-            @Value("${python.backend.url:http://localhost:8000}") String pythonBackendUrl,
             WebClient.Builder webClientBuilder,
             AgentInvocationRepository invocationRepo,
             PaymentOrderRepository orderRepo,
             AgentListingRepository agentRepo) {
-        this.pythonClient = webClientBuilder.baseUrl(pythonBackendUrl).build();
+        // No fixed baseUrl — we always pass the full seller URL via .uri().
+        this.httpClient = webClientBuilder.build();
         this.invocationRepo = invocationRepo;
         this.orderRepo = orderRepo;
         this.agentRepo = agentRepo;
@@ -117,8 +136,6 @@ public class AgentInvocationService {
             return existing.get();
         }
 
-        // Only allow invocation when payment is settled (paid) — or already
-        // delivered if a previous attempt succeeded but state was somehow stale.
         String status = order.getStatus();
         if (!"paid".equals(status) && !"delivered".equals(status)) {
             throw BizException.badRequest(
@@ -128,7 +145,19 @@ public class AgentInvocationService {
         AgentListing agent = agentRepo.findById(order.getListingId())
                 .orElseThrow(() -> BizException.notFound("Agent listing not found"));
 
-        // Persist the question first so we have an audit trail even if the AI call hangs.
+        String endpoint = agent.getApiEndpoint() == null ? null : agent.getApiEndpoint().trim();
+        if (!StringUtils.hasText(endpoint)) {
+            // Persist a clear error row before returning so the modal can show why.
+            AgentInvocation noUrl = existing.orElseGet(AgentInvocation::new);
+            noUrl.setOrderId(orderId);
+            noUrl.setBuyerId(buyerId);
+            noUrl.setAgentId(agent.getId());
+            noUrl.setQuestion(trimmed);
+            return persistError(noUrl,
+                "Seller has not published an apiEndpoint for this agent; cannot invoke.");
+        }
+
+        // Persist the question first so we have an audit trail even if the call hangs.
         AgentInvocation invocation = existing.orElseGet(AgentInvocation::new);
         invocation.setOrderId(orderId);
         invocation.setBuyerId(buyerId);
@@ -139,15 +168,12 @@ public class AgentInvocationService {
         invocationRepo.save(invocation);
 
         try {
-            JSONObject completion = callPython(agent, trimmed);
-            String answer = completion.getString("text");
+            String answer = callSellerEndpoint(endpoint, orderId, agent.getId(), trimmed);
             if (!StringUtils.hasText(answer)) {
-                return persistError(invocation, "Python returned empty completion");
+                return persistError(invocation, "Seller endpoint returned an empty answer");
             }
-            invocation.setAnswer(answer.trim());
-            invocation.setModel(completion.getString("model"));
-            invocation.setInputTokens(completion.getInteger("input_tokens"));
-            invocation.setOutputTokens(completion.getInteger("output_tokens"));
+            invocation.setAnswer(answer);
+            invocation.setModel(hostOf(endpoint));   // record the host as a "model id" surrogate
             invocation.setCompletedAt(LocalDateTime.now());
             invocation.setError(null);
             invocationRepo.save(invocation);
@@ -158,12 +184,11 @@ public class AgentInvocationService {
                 order.setStatus("delivered");
                 orderRepo.save(order);
             }
-            log.info("Agent invocation completed: order={} agent={} tokens(in/out)={}/{}",
-                    orderId, agent.getId(),
-                    invocation.getInputTokens(), invocation.getOutputTokens());
+            log.info("Agent invocation completed: order={} agent={} endpoint={} answerLen={}",
+                    orderId, agent.getId(), endpoint, answer.length());
             return invocation;
         } catch (WebClientResponseException ex) {
-            String msg = "Python /api/ai/complete HTTP " + ex.getStatusCode().value()
+            String msg = "Seller endpoint HTTP " + ex.getStatusCode().value()
                     + ": " + truncate(ex.getResponseBodyAsString());
             log.warn("Agent invocation failed (order={}): {}", orderId, msg);
             return persistError(invocation, msg);
@@ -174,50 +199,72 @@ public class AgentInvocationService {
         }
     }
 
-    private JSONObject callPython(AgentListing agent, String question) {
+    /**
+     * POST the buyer's question to the seller's endpoint and pull an answer
+     * out of the response. Returns trimmed plain text — never null on
+     * success. Throws on connection / HTTP errors so the caller can catch
+     * and persist the failure.
+     */
+    private String callSellerEndpoint(String endpoint, Long orderId, Long agentId, String question) {
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("prompt", question);
-        body.put("system", buildSystemPrompt(agent));
-        body.put("max_tokens", 2048);
+        body.put("question", question);
+        body.put("orderId", orderId);
+        body.put("agentId", agentId);
 
-        return pythonClient.post()
-                .uri("/api/ai/complete")
+        String responseBody = httpClient.post()
+                .uri(endpoint)
+                .contentType(MediaType.APPLICATION_JSON)
+                .accept(MediaType.APPLICATION_JSON, MediaType.TEXT_PLAIN, MediaType.ALL)
                 .bodyValue(body)
                 .retrieve()
-                .bodyToMono(JSONObject.class)
+                .bodyToMono(String.class)
                 .timeout(TIMEOUT)
                 .block();
+
+        return extractAnswer(responseBody);
     }
 
     /**
-     * Synthesize a system prompt from the seller's listing fields. The seller
-     * wrote {@code description / serviceInput / serviceOutput} when they
-     * listed — those are the de-facto "soul" for the demo's Hosted runtime.
-     * If the listing has an external apiEndpoint, mention it in passing so
-     * the model is aware its replies should align with that endpoint's
-     * intended behavior, but actual external calls are out of scope here.
+     * Try to find a usable answer string inside the seller's response body.
+     * <ul>
+     *   <li>JSON object → return the first non-empty value among {@link #ANSWER_KEYS}.
+     *   <li>JSON string → use it as-is.
+     *   <li>Anything else (raw text, non-JSON) → use the raw body as the answer.
+     * </ul>
+     * Returns null only if the body is itself null/empty.
      */
-    private String buildSystemPrompt(AgentListing agent) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("You are the AI agent \"").append(agent.getName()).append("\"");
-        if (StringUtils.hasText(agent.getCategory())) {
-            sb.append(" (category: ").append(agent.getCategory()).append(")");
+    static String extractAnswer(String body) {
+        if (!StringUtils.hasText(body)) return null;
+        String trimmed = body.trim();
+        try {
+            Object parsed = JSON.parse(trimmed);
+            if (parsed instanceof JSONObject obj) {
+                for (String key : ANSWER_KEYS) {
+                    String value = obj.getString(key);
+                    if (StringUtils.hasText(value)) return capAnswer(value.trim());
+                }
+                // Fall through to raw body if no known key was usable.
+            } else if (parsed instanceof String s) {
+                return capAnswer(s.trim());
+            }
+        } catch (JSONException ignored) {
+            // Not JSON — treat as plain text.
         }
-        sb.append(". You are running inside the Nicolas marketplace as a paid pay-per-call service.\n\n");
-        if (StringUtils.hasText(agent.getDescription())) {
-            sb.append("Service description:\n").append(agent.getDescription()).append("\n\n");
+        return capAnswer(trimmed);
+    }
+
+    private static String capAnswer(String s) {
+        if (s.length() <= MAX_ANSWER_LENGTH) return s;
+        return s.substring(0, MAX_ANSWER_LENGTH) + "\n\n[truncated]";
+    }
+
+    /** Extract the host portion of the URL so {@code model} carries something descriptive. */
+    private static String hostOf(String url) {
+        try {
+            return java.net.URI.create(url).getHost();
+        } catch (Exception ignored) {
+            return null;
         }
-        if (StringUtils.hasText(agent.getServiceInput())) {
-            sb.append("Expected input shape:\n").append(agent.getServiceInput()).append("\n\n");
-        }
-        if (StringUtils.hasText(agent.getServiceOutput())) {
-            sb.append("Expected output shape:\n").append(agent.getServiceOutput()).append("\n\n");
-        }
-        sb.append("Stay strictly within scope of the service description. ");
-        sb.append("If the user's question is outside scope, politely say so and suggest what you can help with. ");
-        sb.append("Match the output shape above as closely as possible. ");
-        sb.append("Respond in the same language the user wrote the question in.");
-        return sb.toString();
     }
 
     private AgentInvocation persistError(AgentInvocation invocation, String message) {

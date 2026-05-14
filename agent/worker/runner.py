@@ -14,12 +14,10 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent / ".env")
 
 from worker.config import load_config
-from worker.dispute_llm import ArbitratorLLM
-from worker.dispute_processor import process_disputes
 from worker.llm_review import AuditorLLM
 from worker.processor import TableSpec, process_table
 
-log = logging.getLogger("nicolas.worker")
+log = logging.getLogger("nicolas.auditor")
 
 TABLES: list[TableSpec] = [
     TableSpec(table="merchants",       label="商家入驻"),
@@ -43,20 +41,13 @@ def main() -> None:
     )
 
     cfg = load_config()
-    auditor = AuditorLLM(
+    llm = AuditorLLM(
         model="gemini-2.5-flash",
         max_output_tokens=int(cfg.rules["llm"]["max_output_tokens"]),
     )
-    # Disputes get their own (typically larger) model + token budget — single
-    # decisions can move real money. See the `disputes:` block in audit_rules.yaml.
-    dispute_rules = cfg.rules.get("disputes", {})
-    arbitrator = ArbitratorLLM(
-        model=str(dispute_rules.get("model", "gemini-2.5-pro")),
-        max_output_tokens=int(dispute_rules.get("max_output_tokens", 2048)),
-    )
 
     log.info(
-        "Worker started (poll=%ss, tables=%s, disputes=on, feishu=%s)",
+        "Auditor worker started (poll=%ss, tables=%s, feishu=%s)",
         cfg.poll_interval_sec,
         [t.table for t in TABLES],
         "on" if cfg.feishu_webhook_url else "off",
@@ -68,19 +59,12 @@ def main() -> None:
     while _running:
         cycle_start = time.time()
         total = 0
-        # Listing audit (merchants / agent_listings / skill_listings)
         for spec in TABLES:
             try:
-                total += process_table(spec, cfg, auditor)
+                total += process_table(spec, cfg, llm)
             except Exception as exc:
                 # Never let one table's failure kill the worker.
                 log.exception("Cycle failed for table %s: %s", spec.table, exc)
-
-        # Dispute arbitration (order_disputes)
-        try:
-            total += process_disputes(cfg, arbitrator)
-        except Exception as exc:
-            log.exception("Cycle failed for disputes: %s", exc)
 
         if total == 0:
             log.debug("No pending records this cycle.")
@@ -93,7 +77,7 @@ def main() -> None:
             time.sleep(min(1.0, sleep_for - slept))
             slept += 1.0
 
-    log.info("Worker stopped cleanly.")
+    log.info("Auditor worker stopped cleanly.")
     sys.exit(0)
 
 

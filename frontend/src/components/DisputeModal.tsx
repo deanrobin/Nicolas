@@ -90,7 +90,7 @@ export default function DisputeModal({
         type="warning"
         showIcon
         style={{ marginBottom: 12 }}
-        message="Filing a dispute blocks the weekly payout to the seller until a Nicolas admin reviews it. V1 has no auto-refund — the platform admin handles money movement manually."
+        message="发起申诉会暂停本周对卖家的结算放款，直到 Nicolas 管理员审核完毕。V1 阶段不自动退款 —— 资金由平台管理员人工处理。"
       />
       <Paragraph>
         <Text>What went wrong?</Text>

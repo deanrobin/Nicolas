@@ -340,9 +340,22 @@ function triggerBlobDownload(blob: Blob, filename: string): void {
 export const providerApi = {
   stats: () => request<ProviderStats>('/provider/stats'),
 
-  reviewMerchants: () => request<Merchant[]>('/provider/review/merchants'),
-  reviewAgents: () => request<AgentListing[]>('/provider/review/agents'),
-  reviewSkills: () => request<SkillListing[]>('/provider/review/skills'),
+  // status (optional):
+  //   omitted / 'queue'  → live queue (pending + needs_human)
+  //   'all'              → full history
+  //   'approved' | 'rejected' | 'pending' | 'needs_human' | 'init' → that bucket
+  reviewMerchants: (status?: string) =>
+    request<Merchant[]>(
+      `/provider/review/merchants${status ? `?status=${encodeURIComponent(status)}` : ''}`,
+    ),
+  reviewAgents: (status?: string) =>
+    request<AgentListing[]>(
+      `/provider/review/agents${status ? `?status=${encodeURIComponent(status)}` : ''}`,
+    ),
+  reviewSkills: (status?: string) =>
+    request<SkillListing[]>(
+      `/provider/review/skills${status ? `?status=${encodeURIComponent(status)}` : ''}`,
+    ),
 
   approveMerchant: (id: number) =>
     request<Merchant>(`/provider/merchants/${id}/approve`, { method: 'POST' }),

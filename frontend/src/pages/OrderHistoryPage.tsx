@@ -44,9 +44,9 @@ const STATUS_META: Record<OrderStatus, { color: string; icon: React.ReactNode; l
 }
 
 const DISPUTE_META: Record<Exclude<DisputeStatus, null>, { color: string; label: string }> = {
-  open:     { color: 'volcano', label: 'Dispute open' },
-  resolved: { color: 'purple',  label: 'Dispute resolved' },
-  rejected: { color: 'default', label: 'Dispute rejected' },
+  open:     { color: 'volcano', label: '申诉中' },
+  resolved: { color: 'purple',  label: '申诉成立 · 退款给买家' },
+  rejected: { color: 'default', label: '申诉驳回 · 卖家正常结算' },
 }
 
 /**

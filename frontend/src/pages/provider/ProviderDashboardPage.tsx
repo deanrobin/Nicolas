@@ -141,7 +141,7 @@ export default function ProviderDashboardPage() {
     setActing(true)
     try {
       await providerApi.resolveDispute(resolveTarget.id, refundAmount, note)
-      message.success('Dispute resolved')
+      message.success('申诉成立：已记账，请线下退款给买家')
       setResolveTarget(null)
       await load()
     } catch (err) {
@@ -156,7 +156,7 @@ export default function ProviderDashboardPage() {
     setActing(true)
     try {
       await providerApi.rejectDispute(disputeRejectTarget.id, reason)
-      message.success('Dispute rejected; payout to seller resumes')
+      message.success('申诉已驳回：卖家会在下次周结时正常拿到放款')
       setDisputeRejectTarget(null)
       await load()
     } catch (err) {
@@ -379,9 +379,12 @@ export default function ProviderDashboardPage() {
       dataIndex: 'status',
       width: 100,
       render: (s: OrderDispute['status']) => {
-        if (s === 'open')     return <Tag icon={<WarningOutlined />} color="volcano">Open</Tag>
-        if (s === 'resolved') return <Tag icon={<CheckCircleOutlined />} color="purple">Resolved</Tag>
-        return <Tag icon={<CloseCircleOutlined />}>Rejected</Tag>
+        // Wording: the buyer's complaint is what's being "rejected" or
+        // "resolved", not the order itself. Spell it out so admin doesn't
+        // misclick.
+        if (s === 'open')     return <Tag icon={<WarningOutlined />} color="volcano">申诉中</Tag>
+        if (s === 'resolved') return <Tag icon={<CheckCircleOutlined />} color="purple">申诉成立 · 退款给买家</Tag>
+        return <Tag icon={<CloseCircleOutlined />}>申诉驳回 · 卖家正常结算</Tag>
       },
     },
     {
@@ -415,8 +418,8 @@ export default function ProviderDashboardPage() {
           return (
             <Text type="secondary" style={{ fontSize: 12 }}>
               {row.status === 'resolved'
-                ? `Refund: ${row.refundAmount ?? '—'} USDT`
-                : 'Buyer claim rejected'}
+                ? `退款给买家：${row.refundAmount ?? '—'} USDT`
+                : '申诉已驳回，卖家正常结算'}
             </Text>
           )
         }
@@ -429,7 +432,7 @@ export default function ProviderDashboardPage() {
               loading={acting}
               onClick={() => setResolveTarget(row)}
             >
-              Resolve
+              申诉成立 · 退款
             </Button>
             <Button
               danger
@@ -438,7 +441,7 @@ export default function ProviderDashboardPage() {
               loading={acting}
               onClick={() => setDisputeRejectTarget(row)}
             >
-              Reject
+              驳回申诉
             </Button>
             <Tooltip title={row.aiError ? `Last error: ${row.aiError}` : 'Re-run arbitrator AI'}>
               <Button
@@ -861,10 +864,10 @@ function ResolveDisputeModal({
   return (
     <Modal
       open={dispute !== null}
-      title="Resolve dispute"
+      title="申诉成立 · 退款给买家"
       onCancel={onCancel}
       onOk={() => onOk(refundAmount.trim() || null, note.trim() || null)}
-      okText="Resolve & block settlement"
+      okText="确认退款（卖家本周不结算）"
       okButtonProps={{ loading, disabled: loading }}
       destroyOnClose
     >
@@ -931,10 +934,10 @@ function RejectDisputeModal({
   return (
     <Modal
       open={dispute !== null}
-      title="Reject dispute"
+      title="驳回申诉 · 卖家正常结算"
       onCancel={onCancel}
       onOk={() => onOk(reason)}
-      okText="Reject (resume payout)"
+      okText="确认驳回（卖家下次周结放款）"
       okButtonProps={{
         danger: true,
         loading,

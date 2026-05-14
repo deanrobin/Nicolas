@@ -120,8 +120,14 @@ export default function AppLayout() {
         top: 0,
         zIndex: 30,
         backdropFilter: 'blur(12px)',
-        background: 'color-mix(in srgb, var(--ink) 80%, transparent)',
-        borderBottom: '1px solid var(--line)',
+        // Vertical gradient gives the bar visible depth against the
+        // ink body — previously both used the same `--ink` value and
+        // the chrome basically disappeared. Top picks up a faint gold
+        // wash to echo the brand accent.
+        background:
+          'linear-gradient(180deg, color-mix(in srgb, var(--gold) 6%, var(--ink-2)) 0%, var(--ink-3) 100%)',
+        borderBottom: '1px solid var(--line-strong)',
+        boxShadow: '0 1px 0 0 rgba(255, 209, 122, .04) inset, 0 8px 24px -16px rgba(0, 0, 0, .6)',
       }}>
         <div style={{
           maxWidth: 1360,

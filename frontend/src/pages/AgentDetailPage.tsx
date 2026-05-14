@@ -1,29 +1,18 @@
 import { useCallback, useEffect, useState } from 'react'
-import {
-  Button,
-  Card,
-  Descriptions,
-  Spin,
-  Tag,
-  Typography,
-  Space,
-  Result,
-  Table,
-  Alert,
-} from 'antd'
-import {
-  ArrowLeftOutlined,
-  CheckCircleOutlined,
-  ClockCircleOutlined,
-  CloseCircleOutlined,
-  RocketOutlined,
-  MessageOutlined,
-} from '@ant-design/icons'
 import { App as AntApp } from 'antd'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { marketApi } from '../api/client'
 import AgentInvokeModal from '../components/AgentInvokeModal'
 import ReviewSection from '../components/ReviewSection'
+import {
+  DetailBackLink,
+  DetailHeader,
+  DetailIO,
+  DetailPanel,
+  Hairline,
+  MarketLoading,
+  StatusPill,
+} from '../components/nicolas/market'
 import type {
   AgentInvocation,
   AgentListing,
@@ -31,15 +20,13 @@ import type {
   PaymentOrder,
 } from '../types/api'
 
-const { Title, Text, Paragraph } = Typography
-
-const STATUS_META: Record<OrderStatus, { color: string; icon: React.ReactNode; label: string }> = {
-  pending_payment: { color: 'orange',   icon: <ClockCircleOutlined />, label: 'Pending payment' },
-  confirming:      { color: 'blue',     icon: <ClockCircleOutlined />, label: 'Confirming on chain' },
-  paid:            { color: 'cyan',     icon: <CheckCircleOutlined />, label: 'Paid · in holdback' },
-  delivered:       { color: 'green',    icon: <CheckCircleOutlined />, label: 'Delivered' },
-  confirmed:       { color: 'geekblue', icon: <CheckCircleOutlined />, label: 'Confirmed · payout pending' },
-  refunded:        { color: 'red',      icon: <CloseCircleOutlined />, label: 'Refunded' },
+const STATUS_META: Record<OrderStatus, { tone: Parameters<typeof StatusPill>[0]['tone']; label: string }> = {
+  pending_payment: { tone: 'pending',   label: 'Pending payment' },
+  confirming:      { tone: 'progress',  label: 'Confirming on chain' },
+  paid:            { tone: 'paid',      label: 'Paid · in holdback' },
+  delivered:       { tone: 'success',   label: 'Delivered' },
+  confirmed:       { tone: 'confirmed', label: 'Confirmed · payout pending' },
+  refunded:        { tone: 'fail',      label: 'Refunded' },
 }
 
 export default function AgentDetailPage() {
@@ -47,13 +34,7 @@ export default function AgentDetailPage() {
   const agentId = Number(id)
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  /**
-   * Optional anchor order from {@code ?order=N} — set when the buyer
-   * navigated here from My Orders. Forces the "Use this agent" card to
-   * render for that specific order (potentially delivered / confirmed,
-   * i.e. read-only), so the buyer can revisit a past Q&A even after
-   * they've bought the same agent again.
-   */
+  /** Anchor order from `?order=N` (set by My Orders → View item). */
   const focusedOrderId = (() => {
     const raw = searchParams.get('order')
     if (!raw) return null
@@ -64,7 +45,6 @@ export default function AgentDetailPage() {
 
   const [agent, setAgent] = useState<AgentListing | null>(null)
   const [orders, setOrders] = useState<PaymentOrder[]>([])
-  /** The order whose conversation the "Use this agent" card represents. */
   const [usableOrder, setUsableOrder] = useState<PaymentOrder | null>(null)
   const [invocation, setInvocation] = useState<AgentInvocation | null>(null)
   const [loading, setLoading] = useState(true)
@@ -88,16 +68,10 @@ export default function AgentDetailPage() {
         .sort((x, y) => y.id - x.id)
       setOrders(mine)
 
-      // Pick the order whose "Use this agent" card we should render.
-      //
-      // 1. `?order=N` is the explicit pointer set by My Orders → View item.
-      //    Honor it regardless of status so the buyer can re-read a past
-      //    Q&A (delivered / confirmed shows up read-only).
-      // 2. Otherwise pick an ACTIVE order — `paid` is the only one with
-      //    a fresh call still owed. `delivered` / `confirmed` are
-      //    intentionally NOT picked here: the buyer has spent that call,
-      //    so the page should look like a normal listing again and let
-      //    them buy a new one from Agent Market.
+      // ?order=N wins over the default-paid heuristic so the buyer can revisit
+      // an already-delivered conversation. Otherwise show only the currently
+      // active call (`paid`); delivered/confirmed orders are terminal and the
+      // page reads like a fresh listing again.
       const usable =
         (focusedOrderId != null
           ? mine.find((o) => o.id === focusedOrderId)
@@ -129,9 +103,6 @@ export default function AgentDetailPage() {
     reload()
   }, [reload])
 
-  // When the buyer arrives via My Orders → View item (?order=N) on an
-  // order that already has a completed Q&A, open the modal directly so
-  // they land on the past record instead of having to click again.
   useEffect(() => {
     if (focusedOrderId != null && invocation?.answer) {
       setInvokeOpen(true)
@@ -142,194 +113,158 @@ export default function AgentDetailPage() {
 
   const handleInvocationCompleted = (inv: AgentInvocation) => {
     setInvocation(inv)
-    // Refresh orders so the status pill flips to delivered.
     reload()
   }
 
   if (loading) {
     return (
-      <div style={{ textAlign: 'center', padding: '120px 0' }}>
-        <Spin size="large" />
+      <div style={{ maxWidth: 1080, margin: '0 auto', padding: 32 }}>
+        <MarketLoading />
       </div>
     )
   }
 
   if (notFound || !agent) {
     return (
-      <div style={{ padding: 24 }}>
-        <Button icon={<ArrowLeftOutlined />} onClick={goBack} style={{ marginBottom: 16 }}>
-          Back to Agent Market
-        </Button>
-        <Result
-          status="404"
-          title="Agent not found"
-          subTitle="This agent may have been removed or is not yet approved."
-        />
+      <div style={{ maxWidth: 1080, margin: '0 auto', padding: 32 }}>
+        <DetailBackLink label="Back to Agent Market" onClick={goBack} />
+        <DetailPanel>
+          <div className="nic-display" style={{ fontSize: 32, color: 'var(--gold-soft)', fontStyle: 'italic', marginBottom: 8 }}>
+            ✦ 404
+          </div>
+          <h2 className="nic-display" style={{ fontSize: 22, color: 'var(--parchment)', fontWeight: 500, marginBottom: 6 }}>
+            Agent not found
+          </h2>
+          <p style={{ color: 'var(--muted-strong)', fontSize: 13 }}>
+            This agent may have been removed or is not yet approved.
+          </p>
+        </DetailPanel>
       </div>
     )
   }
 
-  const tags = agent.tags ? agent.tags.split(',').map((t) => t.trim()).filter(Boolean) : []
   const hasHistory = orders.length > 0
 
   return (
-    <div style={{ padding: 24, maxWidth: 960, margin: '0 auto' }}>
-      <Button icon={<ArrowLeftOutlined />} onClick={goBack} style={{ marginBottom: 16 }}>
-        Back to Agent Market
-      </Button>
+    <div style={{ maxWidth: 1080, margin: '0 auto', padding: '28px 32px 60px' }}>
+      <DetailBackLink label="Back to Agent Market" onClick={goBack} />
 
-      <Card style={{ borderRadius: 16 }}>
-        <Space direction="vertical" size="large" style={{ width: '100%' }}>
-          <div>
-            <Space size="middle" align="start" style={{ width: '100%', justifyContent: 'space-between' }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <Title level={3} style={{ margin: 0 }}>{agent.name}</Title>
-                <Space size={8} style={{ marginTop: 8 }} wrap>
-                  {agent.category && <Tag color="purple">{agent.category}</Tag>}
-                  <Tag color="geekblue">{agent.deploymentMode === 'HOSTED' ? 'Hosted (coming soon)' : 'External API'}</Tag>
-                  <Tag color="blue">Pay-per-call · 按次付费</Tag>
-                  {hasHistory && <Tag color="green">{orders.length} active order{orders.length === 1 ? '' : 's'}</Tag>}
-                </Space>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <Text strong style={{ color: '#667eea', fontSize: 22 }}>{agent.priceUsdt} USDT</Text>
-                <div><Text type="secondary" style={{ fontSize: 12 }}>per call</Text></div>
-              </div>
-            </Space>
+      <DetailPanel>
+        <DetailHeader
+          sigil="△"
+          accent="var(--gold)"
+          name={agent.name}
+          priceUsdt={agent.priceUsdt}
+          priceUnit="per call · 按次付费"
+          pills={[
+            ...(agent.category ? [{ label: agent.category, tone: 'violet' as const }] : []),
+            { label: agent.deploymentMode === 'HOSTED' ? 'Hosted (coming soon)' : 'External API', tone: 'jade' as const },
+            { label: 'Pay-per-call', tone: 'gold' as const },
+            ...(hasHistory ? [{ label: `${orders.length} order${orders.length === 1 ? '' : 's'}`, tone: 'neutral' as const }] : []),
+          ]}
+        />
+
+        <p style={{
+          fontSize: 15, lineHeight: 1.65, color: 'var(--muted-strong)',
+          whiteSpace: 'pre-wrap', marginTop: 24,
+        }}>
+          {agent.description}
+        </p>
+
+        {(agent.serviceInput || agent.serviceOutput) && (
+          <div style={{ marginTop: 18 }}>
+            <DetailIO
+              serviceInput={agent.serviceInput}
+              serviceOutput={agent.serviceOutput}
+            />
           </div>
+        )}
 
-          <Paragraph style={{ fontSize: 15, whiteSpace: 'pre-wrap' }}>{agent.description}</Paragraph>
-
-          {(agent.serviceInput || agent.serviceOutput) && (
-            <Descriptions
-              bordered
-              column={1}
-              size="small"
-              labelStyle={{ width: 140, background: '#f6f8ff' }}
-            >
-              {agent.serviceInput && (
-                <Descriptions.Item label="输入 / Input">
-                  <span style={{ whiteSpace: 'pre-wrap' }}>{agent.serviceInput}</span>
-                </Descriptions.Item>
-              )}
-              {agent.serviceOutput && (
-                <Descriptions.Item label="输出 / Output">
-                  <span style={{ whiteSpace: 'pre-wrap' }}>{agent.serviceOutput}</span>
-                </Descriptions.Item>
-              )}
-            </Descriptions>
-          )}
-
-          {tags.length > 0 && (
-            <div>
-              <Text type="secondary" style={{ marginRight: 8 }}>Tags:</Text>
-              {tags.map((t) => <Tag key={t}>{t}</Tag>)}
-            </div>
-          )}
-
-          {usableOrder && (
-            <Card
-              type="inner"
-              title={<span><RocketOutlined style={{ marginRight: 8 }} />Use this agent</span>}
-              style={{ background: '#f6f8ff' }}
-            >
+        {usableOrder && (
+          <div style={{ marginTop: 22 }}>
+            <DetailPanel inner title="✦ Use this agent" accent="var(--gold)">
               {invocation?.answer ? (
                 <>
-                  <Alert
-                    type="success"
-                    showIcon
-                    style={{ marginBottom: 12 }}
-                    message="You've already used this order"
-                    description="One question per pay-per-call order. Open the conversation to review the answer; rate or buy again from My Orders."
-                  />
-                  <Button
-                    type="primary"
-                    icon={<MessageOutlined />}
-                    onClick={() => setInvokeOpen(true)}
-                  >
-                    View conversation
-                  </Button>
+                  <div style={{
+                    background: 'oklch(0.30 0.10 165 / .12)',
+                    border: '1px solid oklch(0.66 0.10 165 / .35)',
+                    borderRadius: 10, padding: '10px 14px', marginBottom: 14,
+                    color: 'var(--jade)', fontSize: 12.5,
+                  }}>
+                    一次提问、一次交付。重新打开看回答；评分或再次购买请去 My Orders。
+                  </div>
+                  <Hairline accent="parchment" onClick={() => setInvokeOpen(true)}>
+                    View conversation →
+                  </Hairline>
                 </>
               ) : invocation?.error ? (
                 <>
-                  <Alert
-                    type="error"
-                    showIcon
-                    style={{ marginBottom: 12 }}
-                    message="Last invocation failed"
-                    description={invocation.error}
-                  />
-                  <Button
-                    type="primary"
-                    icon={<RocketOutlined />}
-                    onClick={() => setInvokeOpen(true)}
-                  >
-                    Retry
-                  </Button>
+                  <div style={{
+                    background: 'oklch(0.20 0.08 30 / .18)',
+                    border: '1px solid oklch(0.62 0.16 30 / .5)',
+                    borderRadius: 10, padding: '10px 14px', marginBottom: 14,
+                    color: 'var(--ember)', fontSize: 12.5,
+                  }}>
+                    上一次调用失败：{invocation.error}
+                  </div>
+                  <Hairline accent="gold" onClick={() => setInvokeOpen(true)}>
+                    Retry →
+                  </Hairline>
                 </>
               ) : (
                 <>
-                  <Paragraph type="secondary" style={{ marginBottom: 12 }}>
-                    You're entitled to one call against this order. Click below to ask your question — the answer
-                    is delivered inline; the order will be marked delivered and you can rate it afterwards.
-                  </Paragraph>
-                  <Button
-                    type="primary"
-                    icon={<RocketOutlined />}
-                    onClick={() => setInvokeOpen(true)}
-                  >
-                    Open agent
-                  </Button>
+                  <p style={{ color: 'var(--muted-strong)', fontSize: 13.5, lineHeight: 1.6, marginBottom: 14 }}>
+                    本订单还有一次调用额度。点击下方提问，回答在弹窗内交付，订单同时进入 Delivered，
+                    之后可在 My Orders 里评分。
+                  </p>
+                  <Hairline accent="gold" onClick={() => setInvokeOpen(true)}>
+                    Open agent →
+                  </Hairline>
                 </>
               )}
-            </Card>
-          )}
+            </DetailPanel>
+          </div>
+        )}
 
-          {hasHistory && (
-            <Card type="inner" title="Your orders" style={{ background: '#fafafa' }}>
-              <Table
-                dataSource={orders}
-                rowKey="id"
-                size="small"
-                pagination={false}
-                columns={[
-                  { title: 'Order', dataIndex: 'id', key: 'id', render: (v: number) => <Text code>{v}</Text> },
-                  { title: 'Status', dataIndex: 'status', key: 'status',
-                    render: (s: OrderStatus) => {
-                      const m = STATUS_META[s]
-                      return <Tag icon={m.icon} color={m.color}>{m.label}</Tag>
-                    } },
-                  { title: 'Amount', dataIndex: 'amountUsdt', key: 'amountUsdt', render: (v: string) => `${v} USDT` },
-                  { title: 'Tx', dataIndex: 'txHash', key: 'txHash',
-                    render: (v: string | null) => v
-                      ? <Text code style={{ fontSize: 11 }}>{v.slice(0, 10)}…{v.slice(-6)}</Text>
-                      : <Text type="secondary">—</Text> },
-                  {
-                    title: 'Action',
-                    key: 'action',
-                    width: 110,
-                    render: (_: unknown, o: PaymentOrder) => (
-                      <Button
-                        size="small"
-                        icon={<MessageOutlined />}
-                        onClick={() =>
-                          navigate(`/market/agents/${agentId}?order=${o.id}`)
-                        }
-                      >
-                        View item
-                      </Button>
-                    ),
-                  },
-                ]}
-              />
-              <Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 0, fontSize: 12 }}>
-                Manage feedback (rate / open a dispute) from{' '}
-                <a onClick={() => navigate('/orders')} style={{ cursor: 'pointer' }}>My Orders</a>.
-              </Paragraph>
-            </Card>
-          )}
-        </Space>
-      </Card>
+        {hasHistory && (
+          <div style={{ marginTop: 22 }}>
+            <DetailPanel inner title="Your orders">
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'auto 1fr 1fr 1fr auto',
+                gap: 12, alignItems: 'center',
+                fontSize: 12.5, color: 'var(--muted-strong)',
+              }}>
+                <div className="nic-mono" style={{ fontSize: 10, letterSpacing: '.16em', color: 'var(--muted)', textTransform: 'uppercase' }}>order</div>
+                <div className="nic-mono" style={{ fontSize: 10, letterSpacing: '.16em', color: 'var(--muted)', textTransform: 'uppercase' }}>status</div>
+                <div className="nic-mono" style={{ fontSize: 10, letterSpacing: '.16em', color: 'var(--muted)', textTransform: 'uppercase' }}>amount</div>
+                <div className="nic-mono" style={{ fontSize: 10, letterSpacing: '.16em', color: 'var(--muted)', textTransform: 'uppercase' }}>tx</div>
+                <div />
+                {orders.map((o) => {
+                  const m = STATUS_META[o.status]
+                  return (
+                    <OrderHistoryRow
+                      key={o.id}
+                      orderId={o.id}
+                      pillTone={m.tone}
+                      pillLabel={m.label}
+                      amount={o.amountUsdt}
+                      txHash={o.txHash}
+                      onView={() => navigate(`/market/agents/${agentId}?order=${o.id}`)}
+                    />
+                  )
+                })}
+              </div>
+              <p style={{ marginTop: 14, marginBottom: 0, fontSize: 12, color: 'var(--muted)' }}>
+                Rate / open a dispute from{' '}
+                <a onClick={() => navigate('/orders')} style={{ cursor: 'pointer', color: 'var(--gold-soft)' }}>
+                  My Orders
+                </a>.
+              </p>
+            </DetailPanel>
+          </div>
+        )}
+      </DetailPanel>
 
       <ReviewSection
         listingType="AGENT"
@@ -339,11 +274,6 @@ export default function AgentDetailPage() {
       />
 
       <AgentInvokeModal
-        // Re-mount the modal whenever the anchored order changes so its
-        // local Q&A state is replaced with the new order's record. Without
-        // this, clicking "View item" on a different order while the modal
-        // is already open would leave the previous order's text in place
-        // (the modal's seed-from-existing effect only runs on `open` flips).
         key={focusedOrderId ?? 'live'}
         open={invokeOpen}
         orderId={usableOrder?.id ?? null}
@@ -353,5 +283,39 @@ export default function AgentDetailPage() {
         onCompleted={handleInvocationCompleted}
       />
     </div>
+  )
+}
+
+/**
+ * One row of the "Your orders" mini table. Rendered as a fragment so the
+ * outer grid lays everything out column-aligned without nested grids.
+ */
+function OrderHistoryRow({
+  orderId,
+  pillTone,
+  pillLabel,
+  amount,
+  txHash,
+  onView,
+}: {
+  orderId: number
+  pillTone: Parameters<typeof StatusPill>[0]['tone']
+  pillLabel: string
+  amount: string
+  txHash: string | null
+  onView: () => void
+}) {
+  return (
+    <>
+      <code className="nic-mono" style={{ fontSize: 11.5, color: 'var(--parchment)' }}>#{orderId}</code>
+      <StatusPill tone={pillTone}>{pillLabel}</StatusPill>
+      <span style={{ fontSize: 12.5 }}>{amount} USDT</span>
+      <code className="nic-mono" style={{ fontSize: 11, color: txHash ? 'var(--gold-soft)' : 'var(--muted)' }}>
+        {txHash ? `${txHash.slice(0, 10)}…${txHash.slice(-6)}` : '—'}
+      </code>
+      <Hairline accent="ghost" style={{ padding: '5px 12px', fontSize: 11.5 }} onClick={onView}>
+        View item
+      </Hairline>
+    </>
   )
 }

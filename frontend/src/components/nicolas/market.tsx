@@ -11,6 +11,11 @@
 import { SyncOutlined, WalletOutlined } from '@ant-design/icons'
 import { AlchemyMark, Hairline } from './theme'
 
+// Re-export so consumers can do
+//   `import { Hairline, MarketCard, … } from '../components/nicolas/market'`
+// without juggling two paths.
+export { Hairline }
+
 // ── Hero strip ────────────────────────────────────────────────────────────
 
 export function MarketHero({
@@ -177,6 +182,222 @@ export function MarketEmpty({ message }: { message: string }) {
       </div>
       <div style={{ fontSize: 14 }}>{message}</div>
     </div>
+  )
+}
+
+// ── Detail-page primitives ────────────────────────────────────────────────
+
+/** "← Back to X Market" link at the top of a detail page. */
+export function DetailBackLink({
+  label,
+  onClick,
+}: {
+  label: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="nic-mono"
+      style={{
+        background: 'transparent', border: 'none', cursor: 'pointer',
+        color: 'var(--muted-strong)', fontSize: 12, letterSpacing: '.06em',
+        textTransform: 'uppercase', marginBottom: 18,
+        display: 'inline-flex', alignItems: 'center', gap: 6,
+      }}
+    >
+      ← {label}
+    </button>
+  )
+}
+
+/**
+ * Header row at the top of a detail page: big name on the left + accent
+ * pills below it; big colored price + small unit caption on the right.
+ */
+export function DetailHeader({
+  sigil,
+  accent,
+  name,
+  pills,
+  priceUsdt,
+  priceUnit,
+}: {
+  sigil: string
+  accent: string
+  name: string
+  pills: Array<{ label: string; tone?: 'gold' | 'jade' | 'violet' | 'ember' | 'neutral' }>
+  priceUsdt: string
+  priceUnit: string
+}) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 22, flexWrap: 'wrap' }}>
+      <div className="nic-display" style={{
+        width: 72, height: 72, borderRadius: 18,
+        background: `color-mix(in srgb, ${accent} 18%, var(--ink))`,
+        border: `1px solid color-mix(in srgb, ${accent} 50%, transparent)`,
+        color: accent,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 36, lineHeight: 1, flexShrink: 0,
+      }}>
+        {sigil}
+      </div>
+      <div style={{ flex: 1, minWidth: 240 }}>
+        <h1 className="nic-display" style={{
+          fontSize: 36, lineHeight: 1.1, letterSpacing: '-.02em',
+          color: 'var(--parchment)', fontWeight: 500,
+        }}>
+          {name}
+        </h1>
+        <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+          {pills.map((p) => {
+            const tones: Record<string, { fg: string; bd: string; bg: string }> = {
+              gold:    { fg: 'var(--gold)',   bd: 'oklch(0.62 0.13 70 / .45)',  bg: 'rgba(255,209,122,.05)' },
+              jade:    { fg: 'var(--jade)',   bd: 'oklch(0.66 0.10 165 / .45)', bg: 'oklch(0.30 0.10 165 / .08)' },
+              violet:  { fg: 'var(--violet)', bd: 'oklch(0.65 0.13 295 / .45)', bg: 'oklch(0.30 0.10 295 / .10)' },
+              ember:   { fg: 'var(--ember)',  bd: 'oklch(0.62 0.16 30 / .45)',  bg: 'oklch(0.20 0.08 30 / .12)' },
+              neutral: { fg: 'var(--muted-strong)', bd: 'var(--line-strong)',    bg: 'transparent' },
+            }
+            const c = tones[p.tone ?? 'neutral']
+            return (
+              <span
+                key={p.label}
+                className="nic-mono"
+                style={{
+                  fontSize: 11, letterSpacing: '.04em',
+                  padding: '3px 10px', borderRadius: 99,
+                  border: `1px solid ${c.bd}`, background: c.bg, color: c.fg,
+                }}
+              >
+                {p.label}
+              </span>
+            )
+          })}
+        </div>
+      </div>
+      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+        <div className="nic-display" style={{ fontSize: 30, color: accent, lineHeight: 1 }}>
+          {priceUsdt}
+          <span style={{ fontSize: 11, color: 'var(--muted)', letterSpacing: '.1em', marginLeft: 4 }}>
+            USDT
+          </span>
+        </div>
+        <div className="nic-mono" style={{ fontSize: 10.5, color: 'var(--muted)', letterSpacing: '.06em', marginTop: 6 }}>
+          {priceUnit}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** Plain dark "Card" wrapper. Use as the main body container on detail pages. */
+export function DetailPanel({
+  children,
+  inner = false,
+  title,
+  accent,
+}: {
+  children: React.ReactNode
+  /** When true, indents like an inner sub-card with a lighter ink background. */
+  inner?: boolean
+  title?: React.ReactNode
+  accent?: string
+}) {
+  return (
+    <div style={{
+      background: inner ? 'rgba(245,239,224,.02)' : 'linear-gradient(180deg, var(--ink-2), var(--ink-3))',
+      border: `1px solid ${accent ? `color-mix(in srgb, ${accent} 35%, var(--line-strong))` : 'var(--line-strong)'}`,
+      borderRadius: 'var(--radius-lg)',
+      padding: inner ? 18 : 28,
+    }}>
+      {title && (
+        <div className="nic-mono" style={{
+          fontSize: 11, letterSpacing: '.18em', color: accent ?? 'var(--gold-soft)',
+          textTransform: 'uppercase', marginBottom: 14,
+        }}>
+          {title}
+        </div>
+      )}
+      {children}
+    </div>
+  )
+}
+
+/** Service input / output block in the same dim mono style the cards use. */
+export function DetailIO({
+  serviceInput,
+  serviceOutput,
+  inLabel = 'input',
+  outLabel = 'output',
+}: {
+  serviceInput: string | null
+  serviceOutput: string | null
+  inLabel?: string
+  outLabel?: string
+}) {
+  if (!serviceInput && !serviceOutput) return null
+  return (
+    <div className="nic-mono" style={{
+      fontSize: 12, lineHeight: 1.7,
+      background: 'var(--ink)',
+      border: '1px solid var(--line)',
+      borderRadius: 12,
+      padding: '12px 14px',
+      color: 'var(--muted-strong)',
+      whiteSpace: 'pre-wrap',
+    }}>
+      {serviceInput && (
+        <div style={{ marginBottom: serviceOutput ? 8 : 0 }}>
+          <span style={{ color: 'var(--gold-soft)', textTransform: 'uppercase', letterSpacing: '.12em', fontSize: 10.5, marginRight: 8 }}>
+            {inLabel} ›
+          </span>
+          {serviceInput}
+        </div>
+      )}
+      {serviceOutput && (
+        <div>
+          <span style={{ color: 'var(--jade)', textTransform: 'uppercase', letterSpacing: '.12em', fontSize: 10.5, marginRight: 8 }}>
+            {outLabel} ›
+          </span>
+          {serviceOutput}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Compact alchemy version of AntD's status Tag, used everywhere we render OrderStatus. */
+export function StatusPill({
+  tone,
+  icon,
+  children,
+}: {
+  tone: 'pending' | 'progress' | 'paid' | 'success' | 'confirmed' | 'fail'
+  icon?: React.ReactNode
+  children: React.ReactNode
+}) {
+  const tones: Record<typeof tone, { fg: string; bd: string; bg: string }> = {
+    pending:   { fg: 'var(--ember)',     bd: 'oklch(0.62 0.16 30 / .45)',  bg: 'oklch(0.20 0.08 30 / .12)' },
+    progress:  { fg: 'var(--violet)',    bd: 'oklch(0.65 0.13 295 / .45)', bg: 'oklch(0.30 0.10 295 / .10)' },
+    paid:      { fg: 'var(--gold-soft)', bd: 'oklch(0.62 0.13 70 / .45)',  bg: 'rgba(255,209,122,.06)' },
+    success:   { fg: 'var(--jade)',      bd: 'oklch(0.66 0.10 165 / .45)', bg: 'oklch(0.30 0.10 165 / .08)' },
+    confirmed: { fg: 'var(--gold)',      bd: 'oklch(0.62 0.13 70 / .55)',  bg: 'rgba(255,209,122,.10)' },
+    fail:      { fg: 'var(--ember)',     bd: 'oklch(0.62 0.16 30 / .55)',  bg: 'oklch(0.20 0.08 30 / .18)' },
+  }
+  const c = tones[tone]
+  return (
+    <span
+      className="nic-mono"
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 6,
+        padding: '3px 10px', borderRadius: 99,
+        border: `1px solid ${c.bd}`, background: c.bg, color: c.fg,
+        fontSize: 11, letterSpacing: '.04em',
+      }}
+    >
+      {icon}
+      {children}
+    </span>
   )
 }
 

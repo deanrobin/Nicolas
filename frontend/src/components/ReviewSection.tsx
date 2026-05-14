@@ -1,16 +1,14 @@
 import { useEffect, useState } from 'react'
-import { Card, Rate, Typography, Empty, Skeleton, Tag, Space, Divider } from 'antd'
+import { Rate } from 'antd'
 import { marketApi } from '../api/client'
 import type { Review } from '../types/api'
-
-const { Title, Text, Paragraph } = Typography
+import { DetailPanel } from './nicolas/market'
 
 /**
- * Public review feed for an Agent or Skill detail page. Renders:
- *   - Header: average rating + total count
- *   - List: visible reviews (newest first), one card per row
- * Hidden reviews are filtered out server-side; this component just renders
- * what /market/{agents|skills}/{id}/reviews returns.
+ * Public review feed for an Agent or Skill detail page, rendered in the
+ * alchemy theme. Header carries the avg rating + count; the body is one
+ * dim mono-tagged row per review (newest first). Hidden reviews are
+ * filtered out server-side.
  */
 export default function ReviewSection({
   listingType,
@@ -20,7 +18,7 @@ export default function ReviewSection({
 }: {
   listingType: 'AGENT' | 'SKILL'
   listingId: number
-  /** From listing view — falls back to recomputing from the fetched feed. */
+  /** From listing view — same value as below in the header. */
   averageRating: string | null
   reviewCount: number
 }) {
@@ -55,60 +53,82 @@ export default function ReviewSection({
   const numericAverage = averageRating != null ? Number(averageRating) : null
 
   return (
-    <Card style={{ marginTop: 16 }}>
-      <Space align="center" size="middle" wrap>
-        <Title level={4} style={{ margin: 0 }}>
-          Buyer reviews
-        </Title>
-        {numericAverage != null && !Number.isNaN(numericAverage) ? (
-          <Space size="small">
-            <Rate disabled allowHalf value={numericAverage} style={{ fontSize: 18 }} />
-            <Text strong>{averageRating}</Text>
-            <Text type="secondary">/ 5</Text>
-            <Text type="secondary">· {reviewCount} review{reviewCount === 1 ? '' : 's'}</Text>
-          </Space>
+    <div style={{ marginTop: 24 }}>
+      <DetailPanel title="Buyer reviews">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginBottom: 18 }}>
+          {numericAverage != null && !Number.isNaN(numericAverage) ? (
+            <>
+              <Rate
+                disabled
+                allowHalf
+                value={numericAverage}
+                style={{ fontSize: 18, color: 'var(--gold)' }}
+              />
+              <span className="nic-display" style={{ fontSize: 24, color: 'var(--parchment)' }}>
+                {averageRating}
+              </span>
+              <span style={{ color: 'var(--muted)', fontSize: 13 }}>
+                / 5 · {reviewCount} review{reviewCount === 1 ? '' : 's'}
+              </span>
+            </>
+          ) : (
+            <span style={{ color: 'var(--muted-strong)', fontSize: 13 }}>
+              No reviews yet
+            </span>
+          )}
+        </div>
+
+        {loading ? (
+          <div className="nic-mono" style={{ color: 'var(--muted)', fontSize: 12 }}>loading…</div>
+        ) : error ? (
+          <div style={{ color: 'var(--ember)', fontSize: 13 }}>{error}</div>
+        ) : reviews.length === 0 ? (
+          <div style={{
+            border: '1px dashed var(--line-strong)',
+            borderRadius: 12, padding: '24px 16px',
+            textAlign: 'center', color: 'var(--muted-strong)', fontSize: 13,
+          }}>
+            <div className="nic-display" style={{ fontSize: 28, color: 'var(--gold-soft)', marginBottom: 6, fontStyle: 'italic' }}>✦</div>
+            Be the first to leave a review after your order is delivered.
+          </div>
         ) : (
-          <Text type="secondary">No reviews yet</Text>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {reviews.map((r) => (
+              <ReviewRow key={r.id} review={r} />
+            ))}
+          </div>
         )}
-      </Space>
-
-      <Divider style={{ margin: '12px 0' }} />
-
-      {loading ? (
-        <Skeleton active paragraph={{ rows: 3 }} />
-      ) : error ? (
-        <Text type="danger">{error}</Text>
-      ) : reviews.length === 0 ? (
-        <Empty
-          description="Be the first to leave a review after your order is delivered."
-          imageStyle={{ height: 80 }}
-        />
-      ) : (
-        <Space direction="vertical" size="small" style={{ width: '100%' }}>
-          {reviews.map((r) => (
-            <ReviewRow key={r.id} review={r} />
-          ))}
-        </Space>
-      )}
-    </Card>
+      </DetailPanel>
+    </div>
   )
 }
 
 function ReviewRow({ review }: { review: Review }) {
   return (
-    <Card size="small" style={{ background: '#fafafa' }}>
-      <Space align="center" size="small">
-        <Rate disabled value={review.rating} style={{ fontSize: 14 }} />
-        <Tag>{review.rating} / 5</Tag>
-        <Text type="secondary" style={{ fontSize: 12 }}>
-          Buyer #{review.buyerId} · {new Date(review.createdAt).toLocaleDateString()}
-        </Text>
-      </Space>
+    <div style={{
+      background: 'var(--ink)',
+      border: '1px solid var(--line)',
+      borderRadius: 12,
+      padding: '12px 14px',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <Rate disabled value={review.rating} style={{ fontSize: 14, color: 'var(--gold)' }} />
+        <span className="nic-mono" style={{ fontSize: 11, color: 'var(--gold-soft)' }}>
+          {review.rating} / 5
+        </span>
+        <span className="nic-mono" style={{ fontSize: 11, color: 'var(--muted)' }}>
+          buyer #{review.buyerId} · {new Date(review.createdAt).toLocaleDateString()}
+        </span>
+      </div>
       {review.comment && (
-        <Paragraph style={{ marginTop: 8, marginBottom: 0, whiteSpace: 'pre-wrap' }}>
+        <p style={{
+          marginTop: 8, marginBottom: 0,
+          color: 'var(--parchment)', fontSize: 13, lineHeight: 1.6,
+          whiteSpace: 'pre-wrap',
+        }}>
           {review.comment}
-        </Paragraph>
+        </p>
       )}
-    </Card>
+    </div>
   )
 }

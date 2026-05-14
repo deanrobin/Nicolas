@@ -8,6 +8,7 @@ import {
   ShopOutlined,
   SettingOutlined,
   ProfileOutlined,
+  ExperimentOutlined,
 } from '@ant-design/icons'
 import { useEffect, useState } from 'react'
 import { merchantApi } from '../../api/client'
@@ -44,8 +45,9 @@ export default function AppLayout() {
   }
 
   const navItems = [
-    { key: '/market/agents', icon: <AppstoreOutlined />, label: 'Agent Market' },
-    { key: '/market/skills', icon: <ShoppingOutlined />, label: 'Skill Market' },
+    { key: '/market/agents', icon: <AppstoreOutlined />,  label: 'Agent Market' },
+    { key: '/market/skills', icon: <ShoppingOutlined />,  label: 'Skill Market' },
+    { key: '/market/souls',  icon: <ExperimentOutlined />, label: 'Soul Market' },
   ]
 
   const isProvider = user?.role === 'service_provider'

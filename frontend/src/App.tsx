@@ -11,6 +11,7 @@ import AgentMarketPage from './pages/AgentMarketPage'
 import AgentDetailPage from './pages/AgentDetailPage'
 import SkillMarketPage from './pages/SkillMarketPage'
 import SkillDetailPage from './pages/SkillDetailPage'
+import SoulMarketPage from './pages/SoulMarketPage'
 import OrderHistoryPage from './pages/OrderHistoryPage'
 import WalletPage from './pages/settings/WalletPage'
 import RegisterSellerPage from './pages/seller/RegisterSellerPage'
@@ -51,6 +52,7 @@ export default function App() {
               <Route path="/market/agents/:id" element={<AgentDetailPage />} />
               <Route path="/market/skills" element={<SkillMarketPage />} />
               <Route path="/market/skills/:id" element={<SkillDetailPage />} />
+              <Route path="/market/souls" element={<SoulMarketPage />} />
               <Route path="/orders" element={<OrderHistoryPage />} />
               <Route path="/seller/register" element={<RegisterSellerPage />} />
               <Route path="/seller/edit-profile" element={<RegisterSellerPage editMode />} />

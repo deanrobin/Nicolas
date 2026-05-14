@@ -1,4 +1,4 @@
-import { Layout, Menu, Avatar, Dropdown, Typography, Button, Space, Tag } from 'antd'
+import { Avatar, Dropdown } from 'antd'
 import {
   AppstoreOutlined,
   ShoppingOutlined,
@@ -12,13 +12,25 @@ import {
 } from '@ant-design/icons'
 import { useEffect, useState } from 'react'
 import { merchantApi } from '../../api/client'
-import { Outlet, useNavigate, useLocation } from 'react-router-dom'
+import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom'
 import { useAuthStore } from '../../store/authStore'
+import {
+  Hairline,
+  NicolasMark,
+  useNicolasTheme,
+} from '../nicolas/theme'
 
-const { Header, Content } = Layout
-const { Text } = Typography
-
+/**
+ * App chrome for every authenticated page. Renders the same alchemy
+ * theme as the home page + login + soul market: dark ink background,
+ * parchment text, gold accents, Fraunces serif brand wordmark.
+ *
+ * The header is sticky at the top and the body is given `var(--ink)` so
+ * child pages inherit the dark canvas — each Market page then layers
+ * its own bespoke content on top.
+ */
 export default function AppLayout() {
+  useNicolasTheme()
   const { user, logout, hasWallet } = useAuthStore()
   const navigate = useNavigate()
   const location = useLocation()
@@ -44,9 +56,9 @@ export default function AppLayout() {
     navigate('/login')
   }
 
-  const navItems = [
-    { key: '/market/agents', icon: <AppstoreOutlined />,  label: 'Agent Market' },
-    { key: '/market/skills', icon: <ShoppingOutlined />,  label: 'Skill Market' },
+  const navItems: Array<{ key: string; icon: React.ReactNode; label: string }> = [
+    { key: '/market/agents', icon: <AppstoreOutlined />,   label: 'Agent Market' },
+    { key: '/market/skills', icon: <ShoppingOutlined />,   label: 'Skill Market' },
     { key: '/market/souls',  icon: <ExperimentOutlined />, label: 'Soul Market' },
   ]
 
@@ -102,142 +114,141 @@ export default function AppLayout() {
   }
 
   return (
-    <Layout style={{ minHeight: '100vh' }}>
-      <Header style={styles.header}>
-        {/* Brand */}
-        <div style={styles.brand} onClick={() => navigate('/')}>
-          <div style={styles.logo}>AB</div>
-          <Text strong style={{ color: '#fff', fontSize: 18 }}>
-            Nicolas
-          </Text>
+    <div className="nic-root" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      <header style={{
+        position: 'sticky',
+        top: 0,
+        zIndex: 30,
+        backdropFilter: 'blur(12px)',
+        background: 'color-mix(in srgb, var(--ink) 80%, transparent)',
+        borderBottom: '1px solid var(--line)',
+      }}>
+        <div style={{
+          maxWidth: 1360,
+          margin: '0 auto',
+          padding: '14px 32px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 28,
+        }}>
+          {/* Brand */}
+          <Link to="/" style={{
+            display: 'flex', alignItems: 'center', gap: 10,
+            color: 'var(--parchment)', textDecoration: 'none',
+          }}>
+            <NicolasMark size={26} />
+            <div className="nic-display" style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-.02em' }}>
+              Nicolas
+            </div>
+            <span style={{
+              fontSize: 10, color: 'var(--gold-soft)',
+              border: '1px solid var(--line-strong)', borderRadius: 4,
+              padding: '2px 6px', marginLeft: 4, letterSpacing: '.1em',
+            }}>v0.1</span>
+          </Link>
+
+          {/* Nav links */}
+          <nav style={{ display: 'flex', gap: 22, fontSize: 13.5 }}>
+            {navItems.map((item) => {
+              const active = location.pathname.startsWith(item.key)
+              return (
+                <button
+                  key={item.key}
+                  onClick={() => navigate(item.key)}
+                  style={{
+                    color: active ? 'var(--parchment)' : 'var(--muted)',
+                    background: 'transparent',
+                    border: 'none',
+                    borderBottom: active ? '1px solid var(--gold)' : '1px solid transparent',
+                    paddingBottom: 4,
+                    fontWeight: active ? 600 : 400,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                  }}
+                >
+                  {item.icon}
+                  {item.label}
+                </button>
+              )
+            })}
+          </nav>
+
+          <div style={{ flex: 1 }} />
+
+          {/* Right side: seller / admin CTA + wallet status + avatar */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            {isProvider ? (
+              <Hairline
+                accent="gold"
+                style={{ padding: '8px 14px', fontSize: 12.5 }}
+                onClick={() => navigate('/admin/dashboard')}
+              >
+                <SettingOutlined /> Platform Admin
+              </Hairline>
+            ) : isMerchant ? (
+              <Hairline
+                accent="gold"
+                style={{ padding: '8px 14px', fontSize: 12.5 }}
+                onClick={() => navigate('/seller/dashboard')}
+              >
+                <ShopOutlined /> Seller Dashboard
+              </Hairline>
+            ) : (
+              <Hairline
+                accent="parchment"
+                style={{ padding: '8px 14px', fontSize: 12.5 }}
+                onClick={() => navigate('/seller/register')}
+              >
+                <ShopOutlined /> Become a Seller
+              </Hairline>
+            )}
+
+            {hasWallet() ? (
+              <div className="nic-mono" style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                padding: '6px 10px', borderRadius: 99,
+                border: '1px solid color-mix(in srgb, var(--jade) 40%, transparent)',
+                background: 'oklch(0.30 0.10 165 / .12)',
+                color: 'var(--jade)', fontSize: 11, letterSpacing: '.02em',
+              }}>
+                <span className="nic-pulse" style={{
+                  display: 'inline-block', width: 5, height: 5, borderRadius: 99, background: 'var(--jade)',
+                }} />
+                {user?.walletAddress?.slice(0, 6)}…{user?.walletAddress?.slice(-4)}
+              </div>
+            ) : (
+              <Hairline
+                accent="ghost"
+                style={{ padding: '7px 12px', fontSize: 12 }}
+                onClick={() => navigate('/settings/wallet')}
+              >
+                <WalletOutlined /> Connect Wallet
+              </Hairline>
+            )}
+
+            <Dropdown menu={dropdownItems} placement="bottomRight" trigger={['click']}>
+              <Avatar
+                style={{
+                  background: 'linear-gradient(135deg, var(--gold), var(--gold-deep))',
+                  color: 'var(--ink)',
+                  cursor: 'pointer',
+                  fontWeight: 700,
+                  border: '1px solid var(--line-strong)',
+                }}
+                icon={!user?.nickname?.[0] ? <UserOutlined /> : undefined}
+              >
+                {user?.nickname?.[0]?.toUpperCase()}
+              </Avatar>
+            </Dropdown>
+          </div>
         </div>
+      </header>
 
-        {/* Nav */}
-        <Menu
-          theme="dark"
-          mode="horizontal"
-          selectedKeys={[location.pathname]}
-          items={navItems}
-          onClick={({ key }) => navigate(key)}
-          style={{ flex: 1, background: 'transparent', border: 'none' }}
-        />
-
-        {/* Right: seller cta + wallet status + avatar */}
-        <Space size="middle">
-          {isProvider ? (
-            <Button
-              size="middle"
-              icon={<SettingOutlined />}
-              onClick={() => navigate('/admin/dashboard')}
-              style={{
-                background: 'linear-gradient(135deg, #764ba2, #667eea)',
-                border: 'none',
-                color: '#fff',
-                fontWeight: 600,
-                borderRadius: 999,
-                paddingInline: 16,
-              }}
-            >
-              Platform Admin
-            </Button>
-          ) : isMerchant ? (
-            <Button
-              size="middle"
-              icon={<ShopOutlined />}
-              onClick={() => navigate('/seller/dashboard')}
-              style={{
-                background: 'linear-gradient(135deg, #ffd17a, #fa8c16)',
-                border: 'none',
-                color: '#1a0e2e',
-                fontWeight: 600,
-                borderRadius: 999,
-                paddingInline: 16,
-              }}
-            >
-              卖家后台 / Dashboard
-            </Button>
-          ) : (
-            <Button
-              size="middle"
-              icon={<ShopOutlined />}
-              onClick={() => navigate('/seller/register')}
-              style={{
-                background: 'linear-gradient(135deg, #ffd17a, #fa8c16)',
-                border: 'none',
-                color: '#1a0e2e',
-                fontWeight: 600,
-                borderRadius: 999,
-                paddingInline: 16,
-              }}
-            >
-              成为商家 / Become a Seller
-            </Button>
-          )}
-
-          {!hasWallet() && (
-            <Button
-              size="small"
-              icon={<WalletOutlined />}
-              onClick={() => navigate('/settings/wallet')}
-              style={{ background: '#667eea', border: 'none', color: '#fff' }}
-            >
-              Connect Wallet
-            </Button>
-          )}
-          {hasWallet() && (
-            <Tag color="green" icon={<WalletOutlined />} style={{ cursor: 'default' }}>
-              {user?.walletAddress?.slice(0, 6)}…{user?.walletAddress?.slice(-4)}
-            </Tag>
-          )}
-
-          <Dropdown menu={dropdownItems} placement="bottomRight">
-            <Avatar
-              style={{ background: '#667eea', cursor: 'pointer' }}
-              icon={<UserOutlined />}
-            >
-              {user?.nickname?.[0]?.toUpperCase()}
-            </Avatar>
-          </Dropdown>
-        </Space>
-      </Header>
-
-      <Content style={{ background: '#f5f5f5' }}>
+      <main style={{ flex: 1, background: 'var(--ink)', color: 'var(--parchment)' }}>
         <Outlet />
-      </Content>
-    </Layout>
+      </main>
+    </div>
   )
-}
-
-const styles = {
-  header: {
-    display: 'flex',
-    alignItems: 'center',
-    padding: '0 24px',
-    background: 'linear-gradient(90deg, #0f0c29, #302b63)',
-    position: 'sticky' as const,
-    top: 0,
-    zIndex: 100,
-    boxShadow: '0 2px 12px rgba(0,0,0,0.3)',
-  } as React.CSSProperties,
-  brand: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 10,
-    cursor: 'pointer',
-    marginRight: 32,
-    userSelect: 'none' as const,
-  } as React.CSSProperties,
-  logo: {
-    width: 36,
-    height: 36,
-    borderRadius: 9,
-    background: 'linear-gradient(135deg, #667eea, #764ba2)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    color: '#fff',
-    fontWeight: 800,
-    fontSize: 14,
-    flexShrink: 0,
-  } as React.CSSProperties,
 }

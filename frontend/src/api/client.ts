@@ -1,4 +1,5 @@
 import type {
+  AgentInvocation,
   AgentListing,
   AgentListingRequest,
   ApiResponse,
@@ -257,6 +258,26 @@ export const marketApi = {
   /** Public list of visible reviews for one skill, newest first. */
   skillReviews: (skillId: number) =>
     request<Review[]>(`/market/skills/${skillId}/reviews`),
+
+  /**
+   * Pay-per-call agent invocation. Buyer submits one question; backend
+   * runs it through the platform AI and returns the answer. Successful
+   * call transitions the order paid → delivered (idempotent: re-calling
+   * returns the same row, doesn't re-bill).
+   */
+  invokeAgent: (orderId: number, question: string) =>
+    request<AgentInvocation>(`/market/orders/${orderId}/invoke`, {
+      method: 'POST',
+      body: JSON.stringify({ question }),
+    }),
+
+  /**
+   * Fetch the (at most one) existing invocation for an agent order.
+   * Returns null when the buyer has not yet invoked. Used by the detail
+   * page so reopening the modal shows past Q&A instead of an empty form.
+   */
+  orderInvocation: (orderId: number) =>
+    request<AgentInvocation | null>(`/market/orders/${orderId}/invocation`),
 
   // Buyer-only post-purchase deliverable info. Public listing responses no
   // longer carry the sensitive fields (skill's downloadUrl/filePath, agent's

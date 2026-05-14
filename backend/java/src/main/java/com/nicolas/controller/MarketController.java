@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSONObject;
 import com.nicolas.config.ChainConfig;
 import com.nicolas.config.PaymentConfig;
 import com.nicolas.exception.BizException;
+import com.nicolas.model.dto.AgentInvocationView;
 import com.nicolas.model.dto.AgentListingView;
 import com.nicolas.model.dto.ApiResponse;
 import com.nicolas.model.dto.ListingRatingStats;
@@ -12,12 +13,14 @@ import com.nicolas.model.dto.OrderDisputeView;
 import com.nicolas.model.dto.PaymentOrderView;
 import com.nicolas.model.dto.ReviewView;
 import com.nicolas.model.dto.SkillListingView;
+import com.nicolas.model.entity.AgentInvocation;
 import com.nicolas.model.entity.AgentListing;
 import com.nicolas.model.entity.PaymentOrder;
 import com.nicolas.model.entity.Review;
 import com.nicolas.model.entity.SkillListing;
 import com.nicolas.repository.AgentListingRepository;
 import com.nicolas.repository.SkillListingRepository;
+import com.nicolas.service.AgentInvocationService;
 import com.nicolas.service.OrderDisputeService;
 import com.nicolas.service.PaymentService;
 import com.nicolas.service.ReviewService;
@@ -50,6 +53,7 @@ public class MarketController {
     private final X402PaymentService x402Service;
     private final OrderDisputeService disputeService;
     private final ReviewService reviewService;
+    private final AgentInvocationService invocationService;
     private final ChainConfig chainConfig;
     private final PaymentConfig paymentConfig;
     private final SkillFileService skillFileService;
@@ -60,6 +64,7 @@ public class MarketController {
                             X402PaymentService x402Service,
                             OrderDisputeService disputeService,
                             ReviewService reviewService,
+                            AgentInvocationService invocationService,
                             ChainConfig chainConfig,
                             PaymentConfig paymentConfig,
                             SkillFileService skillFileService) {
@@ -69,6 +74,7 @@ public class MarketController {
         this.x402Service = x402Service;
         this.disputeService = disputeService;
         this.reviewService = reviewService;
+        this.invocationService = invocationService;
         this.chainConfig = chainConfig;
         this.paymentConfig = paymentConfig;
         this.skillFileService = skillFileService;
@@ -245,6 +251,43 @@ public class MarketController {
         if (req == null) throw BizException.badRequest("Request body required");
         return ResponseEntity.ok(ApiResponse.ok(ReviewView.from(
                 reviewService.submit(userId, id, req.rating(), req.comment()))));
+    }
+
+    public record InvokeAgentRequest(String question) {}
+
+    /**
+     * Buyer asks the agent one question (pay-per-call). On success the
+     * answer is persisted and the order transitions {@code paid → delivered};
+     * the buyer can then rate from My Orders. If the AI call fails, the
+     * invocation row records the error and the order stays {@code paid}
+     * so the buyer can retry.
+     *
+     * <p>Idempotent: a successful invocation is terminal — re-calling
+     * returns the same row without re-running the AI.
+     */
+    @PostMapping("/orders/{id}/invoke")
+    public ResponseEntity<ApiResponse<AgentInvocationView>> invokeAgent(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long id,
+            @RequestBody InvokeAgentRequest req) {
+        if (req == null) throw BizException.badRequest("Request body required");
+        AgentInvocation result = invocationService.invoke(userId, id, req.question());
+        return ResponseEntity.ok(ApiResponse.ok(AgentInvocationView.from(result)));
+    }
+
+    /**
+     * Buyer fetches the existing invocation (if any) for an agent order.
+     * Used by the detail page so reopening the modal shows the past Q&A
+     * instead of an empty form.
+     */
+    @GetMapping("/orders/{id}/invocation")
+    public ResponseEntity<ApiResponse<AgentInvocationView>> getInvocation(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long id) {
+        return ResponseEntity.ok(ApiResponse.ok(
+                invocationService.findByOrder(userId, id)
+                        .map(AgentInvocationView::from)
+                        .orElse(null)));
     }
 
     /**

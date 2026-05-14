@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   Button,
   Card,
@@ -9,7 +9,6 @@ import {
   Space,
   Result,
   Table,
-  Empty,
   Alert,
 } from 'antd'
 import {
@@ -17,16 +16,17 @@ import {
   CheckCircleOutlined,
   ClockCircleOutlined,
   CloseCircleOutlined,
-  ApiOutlined,
   RocketOutlined,
+  MessageOutlined,
 } from '@ant-design/icons'
 import { App as AntApp } from 'antd'
 import { useNavigate, useParams } from 'react-router-dom'
 import { marketApi } from '../api/client'
+import AgentInvokeModal from '../components/AgentInvokeModal'
 import ReviewSection from '../components/ReviewSection'
 import type {
+  AgentInvocation,
   AgentListing,
-  OrderDeliverable,
   OrderStatus,
   PaymentOrder,
 } from '../types/api'
@@ -50,60 +50,69 @@ export default function AgentDetailPage() {
 
   const [agent, setAgent] = useState<AgentListing | null>(null)
   const [orders, setOrders] = useState<PaymentOrder[]>([])
-  const [deliverable, setDeliverable] = useState<OrderDeliverable | null>(null)
+  /** Most recent non-refunded order in paid|delivered|confirmed — the one the buyer interacts with. */
+  const [usableOrder, setUsableOrder] = useState<PaymentOrder | null>(null)
+  const [invocation, setInvocation] = useState<AgentInvocation | null>(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
+  const [invokeOpen, setInvokeOpen] = useState(false)
 
-  useEffect(() => {
+  const reload = useCallback(async () => {
     if (!Number.isFinite(agentId)) {
       setNotFound(true)
       setLoading(false)
       return
     }
-    let cancelled = false
-    ;(async () => {
-      setLoading(true)
-      try {
-        const [a, all] = await Promise.all([
-          marketApi.agent(agentId),
-          marketApi.myOrders().catch(() => [] as PaymentOrder[]),
-        ])
-        if (cancelled) return
-        setAgent(a)
-        const mine = all
-          .filter((o) => o.orderType === 'AGENT' && o.listingId === agentId && o.status !== 'refunded')
-          .sort((x, y) => y.id - x.id)
-        setOrders(mine)
+    try {
+      const [a, all] = await Promise.all([
+        marketApi.agent(agentId),
+        marketApi.myOrders().catch(() => [] as PaymentOrder[]),
+      ])
+      setAgent(a)
+      const mine = all
+        .filter((o) => o.orderType === 'AGENT' && o.listingId === agentId && o.status !== 'refunded')
+        .sort((x, y) => y.id - x.id)
+      setOrders(mine)
 
-        // If the buyer has a paid/delivered order for this agent, fetch the
-        // gated deliverable to surface the apiEndpoint. Public agent responses
-        // no longer carry it.
-        const usable = mine.find((o) => o.status === 'paid' || o.status === 'delivered')
-        if (usable) {
-          try {
-            const d = await marketApi.orderDeliverable(usable.id)
-            if (!cancelled) setDeliverable(d)
-          } catch (err) {
-            if (!cancelled) {
-              message.warning(err instanceof Error
-                ? `Could not load access info: ${err.message}`
-                : 'Could not load access info')
-            }
-          }
+      // Pick the most recent invoke-able order. Paid/delivered/confirmed are
+      // all candidates — paid is invokable, delivered/confirmed are read-only.
+      const usable = mine.find((o) =>
+        o.status === 'paid' || o.status === 'delivered' || o.status === 'confirmed',
+      ) ?? null
+      setUsableOrder(usable)
+
+      if (usable) {
+        try {
+          const inv = await marketApi.orderInvocation(usable.id)
+          setInvocation(inv)
+        } catch (err) {
+          message.warning(err instanceof Error
+            ? `Could not load invocation: ${err.message}`
+            : 'Could not load invocation')
         }
-      } catch (err) {
-        if (!cancelled) {
-          setNotFound(true)
-          message.error(err instanceof Error ? err.message : 'Failed to load agent')
-        }
-      } finally {
-        if (!cancelled) setLoading(false)
+      } else {
+        setInvocation(null)
       }
-    })()
-    return () => { cancelled = true }
-  }, [agentId])
+    } catch (err) {
+      setNotFound(true)
+      message.error(err instanceof Error ? err.message : 'Failed to load agent')
+    } finally {
+      setLoading(false)
+    }
+  }, [agentId, message])
+
+  useEffect(() => {
+    setLoading(true)
+    reload()
+  }, [reload])
 
   const goBack = () => navigate('/market/agents')
+
+  const handleInvocationCompleted = (inv: AgentInvocation) => {
+    setInvocation(inv)
+    // Refresh orders so the status pill flips to delivered.
+    reload()
+  }
 
   if (loading) {
     return (
@@ -186,41 +195,60 @@ export default function AgentDetailPage() {
             </div>
           )}
 
-          {deliverable && (
+          {usableOrder && (
             <Card
               type="inner"
               title={<span><RocketOutlined style={{ marginRight: 8 }} />Use this agent</span>}
               style={{ background: '#f6f8ff' }}
             >
-              {deliverable.deploymentMode === 'HOSTED' ? (
-                <Alert
-                  type="info"
-                  showIcon
-                  message="Hosted runtime"
-                  description="V1 demo doesn't include a hosted execution path yet. The seller's apiEndpoint will be wired through the platform in V2."
-                />
-              ) : deliverable.apiEndpoint ? (
-                <div>
-                  <Paragraph type="secondary" style={{ marginBottom: 12 }}>
-                    You're entitled to call this agent. Open the seller's endpoint in a new tab —
-                    treat the address below as a credential and don't share it publicly.
-                  </Paragraph>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <ApiOutlined style={{ color: '#667eea', fontSize: 18 }} />
-                    <Text code style={{ flex: 1, wordBreak: 'break-all' }}>{deliverable.apiEndpoint}</Text>
-                    <Button
-                      type="primary"
-                      icon={<RocketOutlined />}
-                      href={deliverable.apiEndpoint}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      Open agent
-                    </Button>
-                  </div>
-                </div>
+              {invocation?.answer ? (
+                <>
+                  <Alert
+                    type="success"
+                    showIcon
+                    style={{ marginBottom: 12 }}
+                    message="You've already used this order"
+                    description="One question per pay-per-call order. Open the conversation to review the answer; rate or buy again from My Orders."
+                  />
+                  <Button
+                    type="primary"
+                    icon={<MessageOutlined />}
+                    onClick={() => setInvokeOpen(true)}
+                  >
+                    View conversation
+                  </Button>
+                </>
+              ) : invocation?.error ? (
+                <>
+                  <Alert
+                    type="error"
+                    showIcon
+                    style={{ marginBottom: 12 }}
+                    message="Last invocation failed"
+                    description={invocation.error}
+                  />
+                  <Button
+                    type="primary"
+                    icon={<RocketOutlined />}
+                    onClick={() => setInvokeOpen(true)}
+                  >
+                    Retry
+                  </Button>
+                </>
               ) : (
-                <Empty description="The seller hasn't published an endpoint for this agent yet — please contact them." />
+                <>
+                  <Paragraph type="secondary" style={{ marginBottom: 12 }}>
+                    You're entitled to one call against this order. Click below to ask your question — the answer
+                    is delivered inline; the order will be marked delivered and you can rate it afterwards.
+                  </Paragraph>
+                  <Button
+                    type="primary"
+                    icon={<RocketOutlined />}
+                    onClick={() => setInvokeOpen(true)}
+                  >
+                    Open agent
+                  </Button>
+                </>
               )}
             </Card>
           )}
@@ -260,6 +288,15 @@ export default function AgentDetailPage() {
         listingId={agent.id}
         averageRating={agent.averageRating}
         reviewCount={agent.reviewCount}
+      />
+
+      <AgentInvokeModal
+        open={invokeOpen}
+        orderId={usableOrder?.id ?? null}
+        agent={agent}
+        existing={invocation}
+        onClose={() => setInvokeOpen(false)}
+        onCompleted={handleInvocationCompleted}
       />
     </div>
   )

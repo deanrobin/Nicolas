@@ -345,3 +345,39 @@ ALTER TABLE order_disputes
         COMMENT 'AI 分析完成时间；为空 = 未分析或失败',
     ADD COLUMN ai_error            VARCHAR(500)
         COMMENT 'AI 分析失败原因（Python 离线 / 模型出错 / JSON 解析失败）；非空时 admin 可重试';
+
+
+-- [2026-05-14] V012 Agent pay-per-call 实际调用 — agent_invocations 表
+-- 买家在 Agent 详情页点 "Open agent"，前端弹窗里输入问题 → 后端调
+-- AgentInvocationService → Python /api/ai/complete（以商家的 serviceInput /
+-- serviceOutput 为 prompt 模板）→ 答案落库 → 订单状态 paid → delivered。
+-- 一笔订单 = 一次调用（pay-per-call），order_id UNIQUE。
+-- 调用失败时 error 字段非空、order 状态不动，买家可以重试。
+
+CREATE TABLE IF NOT EXISTS agent_invocations (
+    id            BIGINT        NOT NULL AUTO_INCREMENT,
+    order_id      BIGINT        NOT NULL
+                  COMMENT '关联的 payment_orders.id；一笔订单只能调用一次',
+    buyer_id      BIGINT        NOT NULL
+                  COMMENT '调用发起人 = users.id（必须等于 payment_orders.buyer_id）',
+    agent_id      BIGINT        NOT NULL
+                  COMMENT 'agent_listings.id；冗余存便于审计/聚合',
+    question      TEXT          NOT NULL
+                  COMMENT '买家提交的问题原文（最多 5000 字，应用层校验）',
+    answer        TEXT          NULL
+                  COMMENT 'AI 答复正文；成功时非空',
+    model         VARCHAR(64)   NULL
+                  COMMENT '实际使用的模型 id（来自 Python 返回的 model 字段）',
+    input_tokens  INT           NULL,
+    output_tokens INT           NULL,
+    error         VARCHAR(500)  NULL
+                  COMMENT '调用失败原因；非空时 answer 为空、订单状态保持 paid',
+    completed_at  DATETIME      NULL
+                  COMMENT '调用完成（成功或失败）时间',
+    created_at    DATETIME      NOT NULL,
+    updated_at    DATETIME      NOT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_agent_invocations_order (order_id),
+    KEY idx_agent_invocations_agent (agent_id),
+    KEY idx_agent_invocations_buyer (buyer_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

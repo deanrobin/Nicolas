@@ -206,6 +206,30 @@ export interface SubmitReviewRequest {
   comment?: string
 }
 
+// ── Agent invocations (pay-per-call) ──────────────────────────────────────
+
+export interface AgentInvocation {
+  id: number
+  orderId: number
+  buyerId: number
+  agentId: number
+  question: string
+  /** Non-null when the call succeeded. */
+  answer: string | null
+  model: string | null
+  inputTokens: number | null
+  outputTokens: number | null
+  /** Non-null when the AI call failed; the buyer can retry. */
+  error: string | null
+  completedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface InvokeAgentRequest {
+  question: string
+}
+
 /**
  * Service-provider-side view of an order dispute, including the arbitrator AI
  * recommendation (populated async after the dispute opens). Mirrors the Java

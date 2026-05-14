@@ -160,15 +160,21 @@ export default function SellerDashboardPage() {
 
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto', padding: '32px 24px' }}>
-      <Title level={3}>
-        <ShopOutlined style={{ marginRight: 8 }} />
+      {/* Title and Refresh button sit directly on the dark AppLayout
+          canvas — give them parchment + gold so they don't disappear
+          into the background like the previous AntD-default rendering. */}
+      <Title
+        level={3}
+        style={{ color: 'var(--parchment)', display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}
+      >
+        <ShopOutlined style={{ marginRight: 8, color: 'var(--gold)' }} />
         Seller Dashboard
         <Button
           type="text"
           size="small"
           icon={<SyncOutlined />}
           onClick={() => reload()}
-          style={{ marginLeft: 12 }}
+          style={{ marginLeft: 12, color: 'var(--gold-soft)' }}
         >
           刷新 / Refresh
         </Button>
@@ -245,10 +251,21 @@ export default function SellerDashboardPage() {
         items={[
           {
             key: 'agents',
-            label: `Agents (${agents.length})`,
+            // JSX label so the count can be tinted gold. The label itself
+            // renders directly on the dark canvas (Tabs has no opaque
+            // background) — using parchment for the word + gold for the
+            // count keeps both readable.
+            label: (
+              <span style={{ color: 'var(--parchment)' }}>
+                Agents{' '}
+                <span style={{ color: 'var(--gold)', fontWeight: 600 }}>
+                  ({agents.length})
+                </span>
+              </span>
+            ),
             children:
               agents.length === 0 ? (
-                <Empty description="No agents listed yet" />
+                <Empty description={<span style={{ color: 'var(--muted-strong)' }}>No agents listed yet</span>} />
               ) : (
                 <Table
                   rowKey="id"
@@ -261,10 +278,17 @@ export default function SellerDashboardPage() {
           },
           {
             key: 'skills',
-            label: `Skills (${skills.length})`,
+            label: (
+              <span style={{ color: 'var(--parchment)' }}>
+                Skills{' '}
+                <span style={{ color: 'var(--gold)', fontWeight: 600 }}>
+                  ({skills.length})
+                </span>
+              </span>
+            ),
             children:
               skills.length === 0 ? (
-                <Empty description="No skills listed yet" />
+                <Empty description={<span style={{ color: 'var(--muted-strong)' }}>No skills listed yet</span>} />
               ) : (
                 <Table
                   rowKey="id"

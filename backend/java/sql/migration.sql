@@ -381,3 +381,25 @@ CREATE TABLE IF NOT EXISTS agent_invocations (
     KEY idx_agent_invocations_agent (agent_id),
     KEY idx_agent_invocations_buyer (buyer_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- [2026-05-14] V013 修复 — agent_invocations 历史脏列清理
+-- 现象：dev 环境 INSERT agent_invocations 报 "Field 'agent_listing_id' doesn't have a default value"。
+-- 仓库代码 / V012 migration 全程都用 agent_id 这一列名，从未声明过 agent_listing_id；
+-- 这列是早期 ddl-auto=update 在某个旧 entity 状态下自动推断出来的残留（NOT NULL 无默认值），
+-- V012 用的是 CREATE TABLE IF NOT EXISTS，不会覆盖已有表，所以脏列被保留至今。
+-- 本块用 INFORMATION_SCHEMA 探测后再 ALTER，幂等：列不存在时是 no-op，列存在时直接丢弃。
+-- 因为整个脏列从未被业务写入过，丢列等同于丢"全部 NULL 的废数据"，无需迁移。
+
+SET @col_exists = (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME   = 'agent_invocations'
+      AND COLUMN_NAME  = 'agent_listing_id'
+);
+SET @sql = IF(@col_exists > 0,
+    'ALTER TABLE agent_invocations DROP COLUMN agent_listing_id',
+    'DO 0');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;

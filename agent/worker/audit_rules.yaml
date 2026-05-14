@@ -42,3 +42,23 @@ llm:
   confidence_threshold: 0.7
   # Per-call output cap. The auditor returns small JSON, 1024 is plenty.
   max_output_tokens: 1024
+
+# ── Dispute arbitration (issue #69 arbitrator worker) ──────────────────────
+# Used by worker/dispute_processor.py. The arbitrator (arbitrator.yaml soul)
+# returns a structured ruling on every open dispute; this section tunes the
+# conservatively-narrow case in which the worker is willing to act on its
+# own, without admin involvement.
+disputes:
+  # Use the bigger model for disputes — single decisions can move real money,
+  # we'd rather pay more tokens than wrongly auto-reject a legit complaint.
+  model: gemini-2.5-pro
+  max_output_tokens: 2048
+
+  # Only auto-rejects when ALL of these hold:
+  #   * ruling == RELEASE_FULL (seller fulfilled as promised)
+  #   * auto_execute == true   (the AI itself flagged this as safe)
+  #   * confidence >= auto_reject_confidence
+  #   * order amount <= auto_reject_max_usdt  (blast-radius cap)
+  # Anything else → record the ai_* fields and leave status='open' for admin.
+  auto_reject_confidence: 0.8
+  auto_reject_max_usdt: 20

@@ -88,6 +88,10 @@ export interface AgentListing {
   reviewedAt: string | null
   createdAt: string
   updatedAt: string
+  /** 2-decimal string, or null when no buyer reviews. */
+  averageRating: string | null
+  /** Visible buyer reviews count. */
+  reviewCount: number
 }
 
 export interface SkillListing {
@@ -107,6 +111,10 @@ export interface SkillListing {
   reviewedAt: string | null
   createdAt: string
   updatedAt: string
+  /** 2-decimal string, or null when no buyer reviews. */
+  averageRating: string | null
+  /** Visible buyer reviews count. */
+  reviewCount: number
 }
 
 export interface MerchantRegisterRequest {
@@ -152,7 +160,11 @@ export type OrderStatus =
   | 'confirming'
   | 'paid'
   | 'delivered'
+  | 'confirmed'
   | 'refunded'
+
+/** null = no dispute filed; otherwise one of the three lifecycle states. */
+export type DisputeStatus = null | 'open' | 'resolved' | 'rejected'
 
 export interface PaymentOrder {
   id: number
@@ -168,6 +180,67 @@ export interface PaymentOrder {
   txFromAddress: string | null
   txNonce: number | null
   note: string | null
+  disputeStatus: DisputeStatus
+  /** True when the buyer has already submitted a review for this order. */
+  hasReview: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+// ── Reviews (issue #69 feedback mechanism) ────────────────────────────────
+export interface Review {
+  id: number
+  orderId: number
+  listingType: 'AGENT' | 'SKILL'
+  listingId: number
+  buyerId: number
+  rating: number       // 1..5
+  comment: string | null
+  status: 'visible' | 'hidden'
+  createdAt: string
+  updatedAt: string
+}
+
+export interface SubmitReviewRequest {
+  rating: number       // 1..5
+  comment?: string
+}
+
+/**
+ * Service-provider-side view of an order dispute, including the arbitrator AI
+ * recommendation (populated async after the dispute opens). Mirrors the Java
+ * `OrderDisputeView` record exactly.
+ */
+export interface OrderDispute {
+  id: number
+  orderId: number
+  buyerId: number
+  reason: string
+  status: 'open' | 'resolved' | 'rejected'
+  reviewerId: number | null
+  /** Decimal string, e.g. "0.50". */
+  refundAmount: string | null
+  resolvedAt: string | null
+
+  // dispute_agent (arbitrator) AI recommendation — all nullable, all populated
+  // by DisputeAIService after the dispute opens.
+  aiRuling:
+    | 'RELEASE_FULL'
+    | 'REFUND_FULL'
+    | 'SPLIT'
+    | 'REQUIRE_REWORK'
+    | 'ESCALATE_HUMAN'
+    | null
+  aiBuyerRefundPct: number | null
+  /** Decimal string 0..1, e.g. "0.820". */
+  aiConfidence: string | null
+  aiAutoExecute: boolean | null
+  aiSummary: string | null
+  aiReasoningJson: string | null
+  aiAnalyzedAt: string | null
+  /** Non-null = last AI attempt failed; admin can retry. */
+  aiError: string | null
+
   createdAt: string
   updatedAt: string
 }

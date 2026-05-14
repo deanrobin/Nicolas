@@ -287,3 +287,61 @@ CREATE TABLE IF NOT EXISTS order_disputes (
     UNIQUE KEY uk_order_disputes_order (order_id),
     KEY idx_order_disputes_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- [2026-05-14] V010 反馈机制 — 订单评价 reviews 表（issue #69）
+-- 订单进入 'delivered' 后买家有三种选择：打分（带可选评论）、申诉、不操作（auto-release）。
+-- 打分写入本表，一笔订单一条评价（order_id UNIQUE）。
+-- 提交评价同时把订单从 delivered 推到 confirmed（视为隐式 confirmDelivery）。
+-- service_provider 可以把违规评价标记为 'hidden'，但不能删（保留审计）。
+-- 评价本身不阻塞周结放款（提交评价反而推进了订单状态机）。
+
+CREATE TABLE IF NOT EXISTS reviews (
+    id            BIGINT        NOT NULL AUTO_INCREMENT,
+    order_id      BIGINT        NOT NULL
+                  COMMENT '关联的 payment_orders.id；一笔订单只能有一条评价',
+    listing_type  VARCHAR(10)   NOT NULL
+                  COMMENT 'AGENT | SKILL，与 payment_orders.order_type 同步',
+    listing_id    BIGINT        NOT NULL
+                  COMMENT 'agent_listings.id 或 skill_listings.id（与 listing_type 联合区分）',
+    buyer_id      BIGINT        NOT NULL
+                  COMMENT '评价作者 = users.id（必须等于 payment_orders.buyer_id）',
+    rating        TINYINT       NOT NULL
+                  COMMENT '评分 1..5',
+    comment       TEXT          NULL
+                  COMMENT '可选的文字评论；最多 2000 字（应用层校验）',
+    status        VARCHAR(16)   NOT NULL DEFAULT 'visible'
+                  COMMENT 'visible=公开展示 / hidden=service_provider 屏蔽（仍保留审计）',
+    created_at    DATETIME      NOT NULL,
+    updated_at    DATETIME      NOT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_reviews_order (order_id),
+    KEY idx_reviews_listing (listing_type, listing_id, status),
+    KEY idx_reviews_buyer (buyer_id),
+    CONSTRAINT chk_reviews_rating CHECK (rating BETWEEN 1 AND 5)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- [2026-05-14] V011 dispute_agent AI 推荐 — 给 order_disputes 加 AI 字段（issue #69 后续）
+-- 买家开纠纷后，Java 异步调 Python /api/disputes/analyze（用 arbitrator.yaml 当 soul）
+-- 拿到 ruling/refund%/confidence/summary，落到本表，供 service_provider 后台参考。
+-- AI 失败不影响纠纷流程；ai_error 记录原因，admin 可手动重试。
+-- 所有字段都允许 NULL；旧数据 / Python 离线场景下保持空白。
+
+ALTER TABLE order_disputes
+    ADD COLUMN ai_ruling           VARCHAR(32)
+        COMMENT 'arbitrator 给出的裁决枚举：RELEASE_FULL / REFUND_FULL / SPLIT / REQUIRE_REWORK / ESCALATE_HUMAN',
+    ADD COLUMN ai_buyer_refund_pct INT
+        COMMENT 'AI 建议的买家退款比例 0..100（SPLIT 时有意义）',
+    ADD COLUMN ai_confidence       DECIMAL(4,3)
+        COMMENT 'AI 自评置信度 0..1；< 0.7 一般建议 ESCALATE_HUMAN',
+    ADD COLUMN ai_auto_execute     BOOLEAN
+        COMMENT 'AI 是否认为可以自动执行（V1 始终人工把关，仅参考）',
+    ADD COLUMN ai_summary          VARCHAR(500)
+        COMMENT '一句话裁决摘要',
+    ADD COLUMN ai_reasoning_json   TEXT
+        COMMENT '完整推理 JSON（reasoning / factors / evidence_gaps）',
+    ADD COLUMN ai_analyzed_at      DATETIME
+        COMMENT 'AI 分析完成时间；为空 = 未分析或失败',
+    ADD COLUMN ai_error            VARCHAR(500)
+        COMMENT 'AI 分析失败原因（Python 离线 / 模型出错 / JSON 解析失败）；非空时 admin 可重试';

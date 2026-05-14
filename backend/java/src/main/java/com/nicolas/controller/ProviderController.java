@@ -7,15 +7,18 @@ import com.nicolas.model.dto.AgentListingView;
 import com.nicolas.model.dto.ApiResponse;
 import com.nicolas.model.dto.MerchantView;
 import com.nicolas.model.dto.OrderDisputeView;
+import com.nicolas.model.dto.ReviewView;
 import com.nicolas.model.dto.SkillListingView;
 import com.nicolas.repository.AgentListingRepository;
 import com.nicolas.repository.MerchantRepository;
 import com.nicolas.repository.SkillListingRepository;
 import com.nicolas.repository.UserRepository;
 import com.nicolas.service.ChainQueryService;
+import com.nicolas.service.DisputeAIService;
 import com.nicolas.service.MerchantService;
 import com.nicolas.service.OnchainOsClient;
 import com.nicolas.service.OrderDisputeService;
+import com.nicolas.service.ReviewService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.util.StringUtils;
@@ -44,6 +47,8 @@ public class ProviderController {
     private final SkillListingRepository skillRepo;
     private final MerchantService merchantService;
     private final OrderDisputeService disputeService;
+    private final ReviewService reviewService;
+    private final DisputeAIService disputeAIService;
     private final ChainQueryService chain;
     private final ChainConfig chainConfig;
     private final OnchainOsClient onchainOs;
@@ -54,6 +59,8 @@ public class ProviderController {
                            SkillListingRepository skillRepo,
                            MerchantService merchantService,
                            OrderDisputeService disputeService,
+                           ReviewService reviewService,
+                           DisputeAIService disputeAIService,
                            ChainQueryService chain,
                            ChainConfig chainConfig,
                            OnchainOsClient onchainOs) {
@@ -63,6 +70,8 @@ public class ProviderController {
         this.skillRepo = skillRepo;
         this.merchantService = merchantService;
         this.disputeService = disputeService;
+        this.reviewService = reviewService;
+        this.disputeAIService = disputeAIService;
         this.chain = chain;
         this.chainConfig = chainConfig;
         this.onchainOs = onchainOs;
@@ -277,5 +286,42 @@ public class ProviderController {
             @RequestBody ReviewDecision body) {
         return ResponseEntity.ok(ApiResponse.ok(
                 OrderDisputeView.from(disputeService.reject(id, reviewerId, body.reason()))));
+    }
+
+    /**
+     * Manual retry for the arbitrator AI analysis. Useful when the Python
+     * backend was down at dispute-open time and {@code ai_error} got set.
+     * Always returns the updated dispute view — success populates the
+     * {@code ai*} fields, failure populates {@code aiError} and the admin
+     * can decide / retry again.
+     */
+    @PostMapping("/disputes/{id}/analyze")
+    public ResponseEntity<ApiResponse<OrderDisputeView>> analyzeDispute(@PathVariable Long id) {
+        return ResponseEntity.ok(ApiResponse.ok(
+                OrderDisputeView.from(disputeAIService.analyze(id))));
+    }
+
+    // ── Buyer reviews moderation (issue #69) ─────────────────────────────
+
+    /**
+     * Full moderation feed. Optional {@code ?status=visible|hidden} narrows
+     * the result; omitted = both. Hidden reviews stay accessible here so the
+     * provider can unhide if a takedown was wrong.
+     */
+    @GetMapping("/reviews")
+    public ResponseEntity<ApiResponse<List<ReviewView>>> listReviews(
+            @RequestParam(value = "status", required = false) String status) {
+        return ResponseEntity.ok(ApiResponse.ok(
+                reviewService.listForModeration(status).stream().map(ReviewView::from).toList()));
+    }
+
+    @PostMapping("/reviews/{id}/hide")
+    public ResponseEntity<ApiResponse<ReviewView>> hideReview(@PathVariable Long id) {
+        return ResponseEntity.ok(ApiResponse.ok(ReviewView.from(reviewService.hide(id))));
+    }
+
+    @PostMapping("/reviews/{id}/unhide")
+    public ResponseEntity<ApiResponse<ReviewView>> unhideReview(@PathVariable Long id) {
+        return ResponseEntity.ok(ApiResponse.ok(ReviewView.from(reviewService.unhide(id))));
     }
 }

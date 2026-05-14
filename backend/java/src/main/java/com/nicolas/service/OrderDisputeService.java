@@ -7,8 +7,11 @@ import com.nicolas.repository.OrderDisputeRepository;
 import com.nicolas.repository.PaymentOrderRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
@@ -40,11 +43,19 @@ public class OrderDisputeService {
 
     private final OrderDisputeRepository disputeRepo;
     private final PaymentOrderRepository orderRepo;
+    private final ObjectProvider<DisputeAIService> aiServiceProvider;
 
+    /**
+     * {@code DisputeAIService} is wired via {@link ObjectProvider} so the
+     * dispute flow keeps working even if the AI bean is misconfigured —
+     * unwrapping with {@code getIfAvailable()} is null-safe.
+     */
     public OrderDisputeService(OrderDisputeRepository disputeRepo,
-                               PaymentOrderRepository orderRepo) {
+                               PaymentOrderRepository orderRepo,
+                               ObjectProvider<DisputeAIService> aiServiceProvider) {
         this.disputeRepo = disputeRepo;
         this.orderRepo = orderRepo;
+        this.aiServiceProvider = aiServiceProvider;
     }
 
     @Transactional
@@ -85,6 +96,21 @@ public class OrderDisputeService {
         orderRepo.save(order);
 
         log.info("Dispute opened: order={} buyer={} dispute_id={}", orderId, buyerId, d.getId());
+
+        // Fire arbitrator AI analysis post-commit so the dispute row is visible
+        // when DisputeAIService re-fetches it in a fresh transaction. The AI
+        // bean is optional; if it's not wired or async is disabled, we silently
+        // skip and admin can trigger analysis manually from the dashboard.
+        Long disputeId = d.getId();
+        DisputeAIService ai = aiServiceProvider.getIfAvailable();
+        if (ai != null && TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    ai.analyzeAsync(disputeId);
+                }
+            });
+        }
         return d;
     }
 

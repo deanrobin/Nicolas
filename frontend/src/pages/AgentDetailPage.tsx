@@ -23,6 +23,7 @@ import {
 import { App as AntApp } from 'antd'
 import { useNavigate, useParams } from 'react-router-dom'
 import { marketApi } from '../api/client'
+import ReviewSection from '../components/ReviewSection'
 import type {
   AgentListing,
   OrderDeliverable,
@@ -33,11 +34,12 @@ import type {
 const { Title, Text, Paragraph } = Typography
 
 const STATUS_META: Record<OrderStatus, { color: string; icon: React.ReactNode; label: string }> = {
-  pending_payment: { color: 'orange', icon: <ClockCircleOutlined />, label: 'Pending payment' },
-  confirming:      { color: 'blue',   icon: <ClockCircleOutlined />, label: 'Confirming on chain' },
-  paid:            { color: 'cyan',   icon: <CheckCircleOutlined />, label: 'Paid · in holdback' },
-  delivered:       { color: 'green',  icon: <CheckCircleOutlined />, label: 'Delivered' },
-  refunded:        { color: 'red',    icon: <CloseCircleOutlined />, label: 'Refunded' },
+  pending_payment: { color: 'orange',   icon: <ClockCircleOutlined />, label: 'Pending payment' },
+  confirming:      { color: 'blue',     icon: <ClockCircleOutlined />, label: 'Confirming on chain' },
+  paid:            { color: 'cyan',     icon: <CheckCircleOutlined />, label: 'Paid · in holdback' },
+  delivered:       { color: 'green',    icon: <CheckCircleOutlined />, label: 'Delivered' },
+  confirmed:       { color: 'geekblue', icon: <CheckCircleOutlined />, label: 'Confirmed · payout pending' },
+  refunded:        { color: 'red',      icon: <CloseCircleOutlined />, label: 'Refunded' },
 }
 
 export default function AgentDetailPage() {
@@ -244,10 +246,21 @@ export default function AgentDetailPage() {
                       : <Text type="secondary">—</Text> },
                 ]}
               />
+              <Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 0, fontSize: 12 }}>
+                Manage feedback (rate / open a dispute) from{' '}
+                <a onClick={() => navigate('/orders')} style={{ cursor: 'pointer' }}>My Orders</a>.
+              </Paragraph>
             </Card>
           )}
         </Space>
       </Card>
+
+      <ReviewSection
+        listingType="AGENT"
+        listingId={agent.id}
+        averageRating={agent.averageRating}
+        reviewCount={agent.reviewCount}
+      />
     </div>
   )
 }

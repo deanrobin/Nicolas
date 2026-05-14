@@ -31,9 +31,18 @@ public record AgentListingView(
         String reviewReason,
         LocalDateTime reviewedAt,
         LocalDateTime createdAt,
-        LocalDateTime updatedAt
+        LocalDateTime updatedAt,
+        /** Average buyer rating (2-decimal string) or {@code null} when no reviews. */
+        String averageRating,
+        /** Count of {@code visible} buyer reviews. */
+        long reviewCount
 ) {
     public static AgentListingView from(AgentListing e) {
+        return from(e, ListingRatingStats.EMPTY);
+    }
+
+    public static AgentListingView from(AgentListing e, ListingRatingStats stats) {
+        ListingRatingStats s = stats == null ? ListingRatingStats.EMPTY : stats;
         return new AgentListingView(
                 e.getId(),
                 e.getMerchantId(),
@@ -50,7 +59,9 @@ public record AgentListingView(
                 e.getReviewReason(),
                 e.getReviewedAt(),
                 e.getCreatedAt(),
-                e.getUpdatedAt()
+                e.getUpdatedAt(),
+                s.averageRating(),
+                s.reviewCount()
         );
     }
 
@@ -63,6 +74,11 @@ public record AgentListingView(
      * the EXTERNAL/HOSTED badge.
      */
     public static AgentListingView fromPublic(AgentListing e) {
+        return fromPublic(e, ListingRatingStats.EMPTY);
+    }
+
+    public static AgentListingView fromPublic(AgentListing e, ListingRatingStats stats) {
+        ListingRatingStats s = stats == null ? ListingRatingStats.EMPTY : stats;
         return new AgentListingView(
                 e.getId(),
                 e.getMerchantId(),
@@ -79,7 +95,9 @@ public record AgentListingView(
                 e.getReviewReason(),
                 e.getReviewedAt(),
                 e.getCreatedAt(),
-                e.getUpdatedAt()
+                e.getUpdatedAt(),
+                s.averageRating(),
+                s.reviewCount()
         );
     }
 }

@@ -9,10 +9,13 @@ import type {
   MerchantRegisterRequest,
   MyListings,
   OrderDeliverable,
+  OrderDispute,
   PaymentOrder,
   ProviderStats,
+  Review,
   SkillListing,
   SkillListingRequest,
+  SubmitReviewRequest,
   UserWallet,
   WalletNonceResponse,
   X402PaymentPayload,
@@ -226,6 +229,35 @@ export const marketApi = {
 
   myOrders: () => request<PaymentOrder[]>('/market/orders/mine'),
 
+  /**
+   * Buyer opens a dispute on a paid/delivered order. Blocks the weekly
+   * settlement payout until the platform admin resolves it.
+   */
+  openDispute: (orderId: number, reason: string) =>
+    request<{ id: number; orderId: number; status: string; reason: string; createdAt: string }>(
+      `/market/orders/${orderId}/dispute`,
+      { method: 'POST', body: JSON.stringify({ reason }) },
+    ),
+
+  /**
+   * Buyer submits a review on a paid/delivered order. Submitting on a
+   * delivered order also transitions the order to {@code confirmed}
+   * (implicit confirmDelivery → unblocks payout).
+   */
+  submitReview: (orderId: number, req: SubmitReviewRequest) =>
+    request<Review>(`/market/orders/${orderId}/review`, {
+      method: 'POST',
+      body: JSON.stringify(req),
+    }),
+
+  /** Public list of visible reviews for one agent, newest first. */
+  agentReviews: (agentId: number) =>
+    request<Review[]>(`/market/agents/${agentId}/reviews`),
+
+  /** Public list of visible reviews for one skill, newest first. */
+  skillReviews: (skillId: number) =>
+    request<Review[]>(`/market/skills/${skillId}/reviews`),
+
   // Buyer-only post-purchase deliverable info. Public listing responses no
   // longer carry the sensitive fields (skill's downloadUrl/filePath, agent's
   // apiEndpoint); this is the gated channel.
@@ -314,4 +346,40 @@ export const providerApi = {
       method: 'POST',
       body: JSON.stringify({ reason }),
     }),
+
+  // ── Disputes (issue #69 — AI-assisted human resolution) ──────────────────
+
+  listDisputes: (status?: 'open' | 'resolved' | 'rejected') => {
+    const qs = status ? `?status=${encodeURIComponent(status)}` : ''
+    return request<OrderDispute[]>(`/provider/disputes${qs}`)
+  },
+
+  /** Manual retry of the arbitrator AI when ai_error is non-null. */
+  analyzeDispute: (id: number) =>
+    request<OrderDispute>(`/provider/disputes/${id}/analyze`, { method: 'POST' }),
+
+  resolveDispute: (id: number, refundAmount: string | null, note: string | null) =>
+    request<OrderDispute>(`/provider/disputes/${id}/resolve`, {
+      method: 'POST',
+      body: JSON.stringify({ refundAmount, note }),
+    }),
+
+  rejectDispute: (id: number, reason: string) =>
+    request<OrderDispute>(`/provider/disputes/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
+
+  // ── Reviews moderation (issue #69) ───────────────────────────────────────
+
+  listReviews: (status?: 'visible' | 'hidden') => {
+    const qs = status ? `?status=${encodeURIComponent(status)}` : ''
+    return request<Review[]>(`/provider/reviews${qs}`)
+  },
+
+  hideReview: (id: number) =>
+    request<Review>(`/provider/reviews/${id}/hide`, { method: 'POST' }),
+
+  unhideReview: (id: number) =>
+    request<Review>(`/provider/reviews/${id}/unhide`, { method: 'POST' }),
 }

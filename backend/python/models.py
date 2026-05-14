@@ -114,6 +114,65 @@ class ReportResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Dispute analysis models (issue #69 — dispute_agent / arbitrator)
+# ---------------------------------------------------------------------------
+
+
+class DisputeAnalyzeRequest(BaseModel):
+    """
+    Request body for POST /api/disputes/analyze. The Java backend gathers the
+    relevant order context and sends a flat blob — we don't pull anything
+    from a database on the Python side.
+    """
+
+    dispute_id: int = Field(..., description="Internal dispute id, for logging")
+    order_id: int
+    order_type: Literal["AGENT", "SKILL"]
+    amount_usdt: str = Field(..., description="Order amount as a plain decimal string")
+    listing_name: str | None = None
+    listing_description: str | None = None
+    listing_promised_input: str | None = Field(
+        None, description="Seller's serviceInput on the listing"
+    )
+    listing_promised_output: str | None = Field(
+        None, description="Seller's serviceOutput on the listing"
+    )
+    buyer_reason: str = Field(..., description="What the buyer wrote when opening the dispute")
+    seller_rebuttal: str | None = Field(
+        None, description="Seller's response, if any (V1 rarely populated)"
+    )
+    delivered_at: str | None = None
+    paid_at: str | None = None
+    tx_hash: str | None = None
+
+
+class DisputeRuling(BaseModel):
+    """Structured ruling extracted from the arbitrator's JSON output."""
+
+    ruling: Literal[
+        "RELEASE_FULL", "REFUND_FULL", "SPLIT", "REQUIRE_REWORK", "ESCALATE_HUMAN"
+    ]
+    buyer_refund_pct: int = Field(0, ge=0, le=100)
+    confidence: float = Field(0.0, ge=0.0, le=1.0)
+    auto_execute: bool = False
+    summary: str
+    reasoning_json: str = Field(
+        ..., description="Full reasoning/factors/evidence_gaps blob, serialized JSON"
+    )
+
+
+class DisputeAnalyzeResponse(BaseModel):
+    """Response body for POST /api/disputes/analyze."""
+
+    dispute_id: int
+    ruling: DisputeRuling
+    model: str
+    input_tokens: int
+    output_tokens: int
+    cached_tokens: int = 0
+
+
+# ---------------------------------------------------------------------------
 # Health
 # ---------------------------------------------------------------------------
 

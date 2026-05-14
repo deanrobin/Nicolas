@@ -252,7 +252,7 @@ export default function AppLayout() {
         </div>
       </header>
 
-      <main style={{ flex: 1, background: 'var(--ink)', color: 'var(--parchment)' }}>
+      <main style={{ flex: 1, background: 'var(--ink-2)', color: 'var(--parchment)' }}>
         <Outlet />
       </main>
     </div>

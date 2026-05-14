@@ -403,3 +403,47 @@ SET @sql = IF(@col_exists > 0,
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
+
+
+-- [2026-05-14] V014 修复 — agent_invocations 整表重建
+-- V013 之后又撞到 "Field 'input' doesn't have a default value"。
+-- 仓库里同样没有任何列叫 input（只有 input_tokens 和 service_input），
+-- 所以这又是 ddl-auto=update 在旧 entity 状态下留下的脏列。
+-- 单列单 DROP 太脆（脏列数量未知），这里直接 DROP + 按 V012 schema 重建：
+-- agent_invocations 自打 V012 起每次 INSERT 都被脏列挡掉，
+-- 业务从未写入任何真实记录，整表清空 = 0 数据丢失。
+--
+-- 后续防御：
+--   建议把 application.yml 里 jpa.hibernate.ddl-auto 从 'update' 改成 'validate'
+--   或 'none'，让 schema 完全由本文件接管。'update' 模式会在 entity 字段被
+--   重命名 / 删掉时悄悄留下脏列，过段时间就会变成本次这种事故。
+
+DROP TABLE IF EXISTS agent_invocations;
+
+CREATE TABLE agent_invocations (
+    id            BIGINT        NOT NULL AUTO_INCREMENT,
+    order_id      BIGINT        NOT NULL
+                  COMMENT '关联的 payment_orders.id；一笔订单只能调用一次',
+    buyer_id      BIGINT        NOT NULL
+                  COMMENT '调用发起人 = users.id（必须等于 payment_orders.buyer_id）',
+    agent_id      BIGINT        NOT NULL
+                  COMMENT 'agent_listings.id；冗余存便于审计/聚合',
+    question      TEXT          NOT NULL
+                  COMMENT '买家提交的问题原文（最多 5000 字，应用层校验）',
+    answer        TEXT          NULL
+                  COMMENT 'AI 答复正文；成功时非空',
+    model         VARCHAR(64)   NULL
+                  COMMENT '实际使用的模型 id（来自 Python 返回的 model 字段）',
+    input_tokens  INT           NULL,
+    output_tokens INT           NULL,
+    error         VARCHAR(500)  NULL
+                  COMMENT '调用失败原因；非空时 answer 为空、订单状态保持 paid',
+    completed_at  DATETIME      NULL
+                  COMMENT '调用完成（成功或失败）时间',
+    created_at    DATETIME      NOT NULL,
+    updated_at    DATETIME      NOT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_agent_invocations_order (order_id),
+    KEY idx_agent_invocations_agent (agent_id),
+    KEY idx_agent_invocations_buyer (buyer_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

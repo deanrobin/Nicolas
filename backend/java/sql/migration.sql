@@ -320,3 +320,28 @@ CREATE TABLE IF NOT EXISTS reviews (
     KEY idx_reviews_buyer (buyer_id),
     CONSTRAINT chk_reviews_rating CHECK (rating BETWEEN 1 AND 5)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- [2026-05-14] V011 dispute_agent AI 推荐 — 给 order_disputes 加 AI 字段（issue #69 后续）
+-- 买家开纠纷后，Java 异步调 Python /api/disputes/analyze（用 arbitrator.yaml 当 soul）
+-- 拿到 ruling/refund%/confidence/summary，落到本表，供 service_provider 后台参考。
+-- AI 失败不影响纠纷流程；ai_error 记录原因，admin 可手动重试。
+-- 所有字段都允许 NULL；旧数据 / Python 离线场景下保持空白。
+
+ALTER TABLE order_disputes
+    ADD COLUMN ai_ruling           VARCHAR(32)
+        COMMENT 'arbitrator 给出的裁决枚举：RELEASE_FULL / REFUND_FULL / SPLIT / REQUIRE_REWORK / ESCALATE_HUMAN',
+    ADD COLUMN ai_buyer_refund_pct INT
+        COMMENT 'AI 建议的买家退款比例 0..100（SPLIT 时有意义）',
+    ADD COLUMN ai_confidence       DECIMAL(4,3)
+        COMMENT 'AI 自评置信度 0..1；< 0.7 一般建议 ESCALATE_HUMAN',
+    ADD COLUMN ai_auto_execute     BOOLEAN
+        COMMENT 'AI 是否认为可以自动执行（V1 始终人工把关，仅参考）',
+    ADD COLUMN ai_summary          VARCHAR(500)
+        COMMENT '一句话裁决摘要',
+    ADD COLUMN ai_reasoning_json   TEXT
+        COMMENT '完整推理 JSON（reasoning / factors / evidence_gaps）',
+    ADD COLUMN ai_analyzed_at      DATETIME
+        COMMENT 'AI 分析完成时间；为空 = 未分析或失败',
+    ADD COLUMN ai_error            VARCHAR(500)
+        COMMENT 'AI 分析失败原因（Python 离线 / 模型出错 / JSON 解析失败）；非空时 admin 可重试';

@@ -9,6 +9,7 @@ import type {
   MerchantRegisterRequest,
   MyListings,
   OrderDeliverable,
+  OrderDispute,
   PaymentOrder,
   ProviderStats,
   Review,
@@ -345,4 +346,40 @@ export const providerApi = {
       method: 'POST',
       body: JSON.stringify({ reason }),
     }),
+
+  // ── Disputes (issue #69 — AI-assisted human resolution) ──────────────────
+
+  listDisputes: (status?: 'open' | 'resolved' | 'rejected') => {
+    const qs = status ? `?status=${encodeURIComponent(status)}` : ''
+    return request<OrderDispute[]>(`/provider/disputes${qs}`)
+  },
+
+  /** Manual retry of the arbitrator AI when ai_error is non-null. */
+  analyzeDispute: (id: number) =>
+    request<OrderDispute>(`/provider/disputes/${id}/analyze`, { method: 'POST' }),
+
+  resolveDispute: (id: number, refundAmount: string | null, note: string | null) =>
+    request<OrderDispute>(`/provider/disputes/${id}/resolve`, {
+      method: 'POST',
+      body: JSON.stringify({ refundAmount, note }),
+    }),
+
+  rejectDispute: (id: number, reason: string) =>
+    request<OrderDispute>(`/provider/disputes/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
+
+  // ── Reviews moderation (issue #69) ───────────────────────────────────────
+
+  listReviews: (status?: 'visible' | 'hidden') => {
+    const qs = status ? `?status=${encodeURIComponent(status)}` : ''
+    return request<Review[]>(`/provider/reviews${qs}`)
+  },
+
+  hideReview: (id: number) =>
+    request<Review>(`/provider/reviews/${id}/hide`, { method: 'POST' }),
+
+  unhideReview: (id: number) =>
+    request<Review>(`/provider/reviews/${id}/unhide`, { method: 'POST' }),
 }

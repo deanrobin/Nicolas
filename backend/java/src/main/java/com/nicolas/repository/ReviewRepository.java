@@ -54,4 +54,14 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
 
     /** Reviews authored by one buyer — used by the order history endpoint. */
     List<Review> findByBuyerIdOrderByCreatedAtDesc(Long buyerId);
+
+    /**
+     * All reviews regardless of visibility, newest first. Used by the
+     * service_provider moderation queue. Listings filtering happens in
+     * the service layer — repository stays generic.
+     */
+    List<Review> findAllByOrderByCreatedAtDesc();
+
+    /** Filter by status only — convenience for the admin's "Hidden" view. */
+    List<Review> findByStatusOrderByCreatedAtDesc(String status);
 }

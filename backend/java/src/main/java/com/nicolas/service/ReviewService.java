@@ -114,6 +114,46 @@ public class ReviewService {
         return reviewRepo.findByBuyerIdOrderByCreatedAtDesc(buyerId);
     }
 
+    /**
+     * Moderation feed for {@code service_provider}. Either return everything
+     * ({@code status=null}) or filter to one bucket ({@code visible} / {@code hidden}).
+     */
+    public List<Review> listForModeration(String statusFilter) {
+        if (statusFilter == null || statusFilter.isBlank()) {
+            return reviewRepo.findAllByOrderByCreatedAtDesc();
+        }
+        return reviewRepo.findByStatusOrderByCreatedAtDesc(statusFilter);
+    }
+
+    /**
+     * Service-provider action: hide a public-visible review. Idempotent —
+     * already-hidden rows return as-is.
+     */
+    @Transactional
+    public Review hide(Long reviewId) {
+        Review r = reviewRepo.findById(reviewId)
+                .orElseThrow(() -> BizException.notFound("Review not found"));
+        if (!"hidden".equals(r.getStatus())) {
+            r.setStatus("hidden");
+            reviewRepo.save(r);
+            log.info("Review hidden by provider: review={} order={}", reviewId, r.getOrderId());
+        }
+        return r;
+    }
+
+    /** Service-provider action: restore a previously-hidden review. Idempotent. */
+    @Transactional
+    public Review unhide(Long reviewId) {
+        Review r = reviewRepo.findById(reviewId)
+                .orElseThrow(() -> BizException.notFound("Review not found"));
+        if (!"visible".equals(r.getStatus())) {
+            r.setStatus("visible");
+            reviewRepo.save(r);
+            log.info("Review unhidden by provider: review={} order={}", reviewId, r.getOrderId());
+        }
+        return r;
+    }
+
     /** Single-listing rating stats. */
     public ListingRatingStats statsFor(String listingType, Long listingId) {
         return ListingRatingStats.fromAggregate(

@@ -40,6 +40,42 @@ public class OrderDispute {
     @Column(name = "resolved_at")
     private LocalDateTime resolvedAt;
 
+    // ── dispute_agent AI recommendation (V011) ───────────────────────────────
+    // Populated asynchronously by DisputeAIService after the dispute is opened.
+    // All fields nullable — Python down / model failure leaves them empty and
+    // sets {@link #aiError}; admin can manually retry via /provider/disputes/{id}/analyze.
+
+    /** RELEASE_FULL | REFUND_FULL | SPLIT | REQUIRE_REWORK | ESCALATE_HUMAN */
+    @Column(name = "ai_ruling", length = 32)
+    private String aiRuling;
+
+    /** 0..100; meaningful only when {@link #aiRuling} = SPLIT. */
+    @Column(name = "ai_buyer_refund_pct")
+    private Integer aiBuyerRefundPct;
+
+    /** 0..1; arbitrator's self-confidence. < 0.7 hints "needs human review". */
+    @Column(name = "ai_confidence", precision = 4, scale = 3)
+    private BigDecimal aiConfidence;
+
+    /** AI's own opinion on whether to auto-execute — V1 ignores it (human always rules). */
+    @Column(name = "ai_auto_execute")
+    private Boolean aiAutoExecute;
+
+    /** One-sentence ruling summary surfaced in the admin queue. */
+    @Column(name = "ai_summary", length = 500)
+    private String aiSummary;
+
+    /** Full reasoning JSON (the reasoning / factors / evidence_gaps blob from arbitrator). */
+    @Column(name = "ai_reasoning_json", columnDefinition = "TEXT")
+    private String aiReasoningJson;
+
+    @Column(name = "ai_analyzed_at")
+    private LocalDateTime aiAnalyzedAt;
+
+    /** Non-null = last AI attempt failed; admin can retry. */
+    @Column(name = "ai_error", length = 500)
+    private String aiError;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -72,6 +108,22 @@ public class OrderDispute {
     public void setRefundAmount(BigDecimal refundAmount) { this.refundAmount = refundAmount; }
     public LocalDateTime getResolvedAt() { return resolvedAt; }
     public void setResolvedAt(LocalDateTime resolvedAt) { this.resolvedAt = resolvedAt; }
+    public String getAiRuling() { return aiRuling; }
+    public void setAiRuling(String aiRuling) { this.aiRuling = aiRuling; }
+    public Integer getAiBuyerRefundPct() { return aiBuyerRefundPct; }
+    public void setAiBuyerRefundPct(Integer aiBuyerRefundPct) { this.aiBuyerRefundPct = aiBuyerRefundPct; }
+    public BigDecimal getAiConfidence() { return aiConfidence; }
+    public void setAiConfidence(BigDecimal aiConfidence) { this.aiConfidence = aiConfidence; }
+    public Boolean getAiAutoExecute() { return aiAutoExecute; }
+    public void setAiAutoExecute(Boolean aiAutoExecute) { this.aiAutoExecute = aiAutoExecute; }
+    public String getAiSummary() { return aiSummary; }
+    public void setAiSummary(String aiSummary) { this.aiSummary = aiSummary; }
+    public String getAiReasoningJson() { return aiReasoningJson; }
+    public void setAiReasoningJson(String aiReasoningJson) { this.aiReasoningJson = aiReasoningJson; }
+    public LocalDateTime getAiAnalyzedAt() { return aiAnalyzedAt; }
+    public void setAiAnalyzedAt(LocalDateTime aiAnalyzedAt) { this.aiAnalyzedAt = aiAnalyzedAt; }
+    public String getAiError() { return aiError; }
+    public void setAiError(String aiError) { this.aiError = aiError; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
 }

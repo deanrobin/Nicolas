@@ -26,12 +26,15 @@ from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 
 from ai_client import AIClient, AIResponse, get_ai_client
+from disputes import analyze_dispute
 from models import (
     AgentChatRequest,
     AgentChatResponse,
     AgentInfo,
     CompletionRequest,
     CompletionResponse,
+    DisputeAnalyzeRequest,
+    DisputeAnalyzeResponse,
     HealthResponse,
     ReportRequest,
     ReportResponse,
@@ -229,6 +232,44 @@ async def ai_complete(body: CompletionRequest) -> CompletionResponse:
         output_tokens=result.output_tokens,
         cached_tokens=result.cached_tokens,
     )
+
+
+# ---------------------------------------------------------------------------
+# Dispute analysis endpoint (issue #69 — dispute_agent / arbitrator AI)
+# ---------------------------------------------------------------------------
+
+
+@app.post("/api/disputes/analyze", response_model=DisputeAnalyzeResponse)
+async def disputes_analyze(body: DisputeAnalyzeRequest) -> DisputeAnalyzeResponse:
+    """
+    Run the arbitrator agent over one dispute and return a structured ruling.
+
+    Called by Java {@code DisputeAIService} asynchronously after the buyer
+    opens a dispute. If this endpoint is unreachable or fails, Java records
+    the error on the dispute row and the admin can retry via
+    {@code POST /provider/disputes/{id}/analyze}.
+    """
+    try:
+        return analyze_dispute(body)
+    except EnvironmentError as exc:
+        # Anthropic key missing — admin needs to know explicitly.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        # Couldn't parse the JSON the model produced — still surface for retry.
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"AI returned malformed JSON: {exc}",
+        ) from exc
+    except Exception as exc:
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Dispute analysis error: {exc}",
+        ) from exc
 
 
 # ---------------------------------------------------------------------------

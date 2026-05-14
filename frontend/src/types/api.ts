@@ -206,6 +206,45 @@ export interface SubmitReviewRequest {
   comment?: string
 }
 
+/**
+ * Service-provider-side view of an order dispute, including the arbitrator AI
+ * recommendation (populated async after the dispute opens). Mirrors the Java
+ * `OrderDisputeView` record exactly.
+ */
+export interface OrderDispute {
+  id: number
+  orderId: number
+  buyerId: number
+  reason: string
+  status: 'open' | 'resolved' | 'rejected'
+  reviewerId: number | null
+  /** Decimal string, e.g. "0.50". */
+  refundAmount: string | null
+  resolvedAt: string | null
+
+  // dispute_agent (arbitrator) AI recommendation — all nullable, all populated
+  // by DisputeAIService after the dispute opens.
+  aiRuling:
+    | 'RELEASE_FULL'
+    | 'REFUND_FULL'
+    | 'SPLIT'
+    | 'REQUIRE_REWORK'
+    | 'ESCALATE_HUMAN'
+    | null
+  aiBuyerRefundPct: number | null
+  /** Decimal string 0..1, e.g. "0.820". */
+  aiConfidence: string | null
+  aiAutoExecute: boolean | null
+  aiSummary: string | null
+  aiReasoningJson: string | null
+  aiAnalyzedAt: string | null
+  /** Non-null = last AI attempt failed; admin can retry. */
+  aiError: string | null
+
+  createdAt: string
+  updatedAt: string
+}
+
 export interface BuySkillResponse {
   order: PaymentOrder
   usdtAddress: string

@@ -46,7 +46,6 @@ export default function AppLayout() {
   const navItems = [
     { key: '/market/agents', icon: <AppstoreOutlined />, label: 'Agent Market' },
     { key: '/market/skills', icon: <ShoppingOutlined />, label: 'Skill Market' },
-    { key: '/orders',        icon: <ProfileOutlined />,  label: 'My Orders' },
   ]
 
   const isProvider = user?.role === 'service_provider'
@@ -77,6 +76,12 @@ export default function AppLayout() {
                   onClick: () => navigate('/seller/register'),
                 },
           ]),
+      {
+        key: 'orders',
+        icon: <ProfileOutlined />,
+        label: 'My Orders',
+        onClick: () => navigate('/orders'),
+      },
       {
         key: 'wallet',
         icon: <WalletOutlined />,

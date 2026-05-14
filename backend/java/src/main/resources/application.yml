@@ -19,7 +19,15 @@ spring:
   # ── JPA ───────────────────────────────────────────────────────────────────
   jpa:
     hibernate:
-      ddl-auto: update
+      # 'validate' = compare entities to the live DB at boot, never mutate it.
+      # All schema changes go through backend/java/sql/migration.sql per
+      # CLAUDE.md. The previous 'update' value silently kept stale columns
+      # whenever an entity field was renamed or removed, which produced
+      # the dev-only "agent_listing_id / input doesn't have a default value"
+      # incidents (V013 + V014 cleaned those up). Override with
+      # SPRING_JPA_HIBERNATE_DDL_AUTO=update only if you need the old behavior
+      # locally.
+      ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO:validate}
     show-sql: false
     open-in-view: false
     properties:

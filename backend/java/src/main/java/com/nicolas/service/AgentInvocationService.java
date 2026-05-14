@@ -46,8 +46,22 @@ import java.util.Optional;
  *
  * <h2>Wire contract with the seller's endpoint</h2>
  *
- * <p>Request: {@code POST <apiEndpoint>} with JSON body
- * <pre>{ "question": "...", "orderId": 123, "agentId": 45 }</pre>
+ * <p>Request: {@code POST <apiEndpoint>} with JSON body that carries the
+ * buyer's question under <b>every common alias</b> so the seller's
+ * endpoint works with whatever field name it already expects:
+ * <pre>
+ * {
+ *   "question": "...",      "q":       "...",
+ *   "query":    "...",      "prompt":  "...",
+ *   "input":    "...",      "text":    "...",
+ *   "message":  "...",
+ *   "orderId":  123,
+ *   "agentId":  45
+ * }
+ * </pre>
+ * All seven alias keys carry the same value; pick whichever your endpoint
+ * already reads. {@code orderId} / {@code agentId} are advisory metadata
+ * for seller-side logging.
  *
  * <p>Response: JSON object containing an answer under any of these keys
  * (first hit wins): {@code answer}, {@code text}, {@code output},
@@ -72,6 +86,13 @@ public class AgentInvocationService {
     /** Response keys to try, in order, when the body is a JSON object. */
     private static final List<String> ANSWER_KEYS =
             List.of("answer", "text", "output", "result", "message", "reply");
+    /**
+     * Request keys we duplicate the buyer's question under, so the seller's
+     * endpoint can read whichever name it already expects without us forcing
+     * one fixed contract.
+     */
+    private static final List<String> QUESTION_ALIAS_KEYS =
+            List.of("question", "q", "query", "prompt", "input", "text", "message");
 
     private final WebClient httpClient;
     private final AgentInvocationRepository invocationRepo;
@@ -207,7 +228,9 @@ public class AgentInvocationService {
      */
     private String callSellerEndpoint(String endpoint, Long orderId, Long agentId, String question) {
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("question", question);
+        // Duplicate the buyer's question under every common alias so we don't
+        // force the seller into one fixed field name.
+        for (String key : QUESTION_ALIAS_KEYS) body.put(key, question);
         body.put("orderId", orderId);
         body.put("agentId", agentId);
 

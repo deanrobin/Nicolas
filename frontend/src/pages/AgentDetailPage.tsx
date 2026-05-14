@@ -20,7 +20,7 @@ import {
   MessageOutlined,
 } from '@ant-design/icons'
 import { App as AntApp } from 'antd'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { marketApi } from '../api/client'
 import AgentInvokeModal from '../components/AgentInvokeModal'
 import ReviewSection from '../components/ReviewSection'
@@ -46,11 +46,25 @@ export default function AgentDetailPage() {
   const { id } = useParams<{ id: string }>()
   const agentId = Number(id)
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  /**
+   * Optional anchor order from {@code ?order=N} — set when the buyer
+   * navigated here from My Orders. Forces the "Use this agent" card to
+   * render for that specific order (potentially delivered / confirmed,
+   * i.e. read-only), so the buyer can revisit a past Q&A even after
+   * they've bought the same agent again.
+   */
+  const focusedOrderId = (() => {
+    const raw = searchParams.get('order')
+    if (!raw) return null
+    const parsed = Number(raw)
+    return Number.isFinite(parsed) ? parsed : null
+  })()
   const { message } = AntApp.useApp()
 
   const [agent, setAgent] = useState<AgentListing | null>(null)
   const [orders, setOrders] = useState<PaymentOrder[]>([])
-  /** Most recent non-refunded order in paid|delivered|confirmed — the one the buyer interacts with. */
+  /** The order whose conversation the "Use this agent" card represents. */
   const [usableOrder, setUsableOrder] = useState<PaymentOrder | null>(null)
   const [invocation, setInvocation] = useState<AgentInvocation | null>(null)
   const [loading, setLoading] = useState(true)
@@ -74,11 +88,20 @@ export default function AgentDetailPage() {
         .sort((x, y) => y.id - x.id)
       setOrders(mine)
 
-      // Pick the most recent invoke-able order. Paid/delivered/confirmed are
-      // all candidates — paid is invokable, delivered/confirmed are read-only.
-      const usable = mine.find((o) =>
-        o.status === 'paid' || o.status === 'delivered' || o.status === 'confirmed',
-      ) ?? null
+      // Pick the order whose "Use this agent" card we should render.
+      //
+      // 1. `?order=N` is the explicit pointer set by My Orders → View item.
+      //    Honor it regardless of status so the buyer can re-read a past
+      //    Q&A (delivered / confirmed shows up read-only).
+      // 2. Otherwise pick an ACTIVE order — `paid` is the only one with
+      //    a fresh call still owed. `delivered` / `confirmed` are
+      //    intentionally NOT picked here: the buyer has spent that call,
+      //    so the page should look like a normal listing again and let
+      //    them buy a new one from Agent Market.
+      const usable =
+        (focusedOrderId != null
+          ? mine.find((o) => o.id === focusedOrderId)
+          : mine.find((o) => o.status === 'paid')) ?? null
       setUsableOrder(usable)
 
       if (usable) {
@@ -99,12 +122,21 @@ export default function AgentDetailPage() {
     } finally {
       setLoading(false)
     }
-  }, [agentId, message])
+  }, [agentId, focusedOrderId, message])
 
   useEffect(() => {
     setLoading(true)
     reload()
   }, [reload])
+
+  // When the buyer arrives via My Orders → View item (?order=N) on an
+  // order that already has a completed Q&A, open the modal directly so
+  // they land on the past record instead of having to click again.
+  useEffect(() => {
+    if (focusedOrderId != null && invocation?.answer) {
+      setInvokeOpen(true)
+    }
+  }, [focusedOrderId, invocation?.answer])
 
   const goBack = () => navigate('/market/agents')
 

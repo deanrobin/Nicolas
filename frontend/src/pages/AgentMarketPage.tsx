@@ -38,10 +38,21 @@ export default function AgentMarketPage() {
         marketApi.myOrders().catch(() => []),
       ])
       setAgents(data)
+      // Only ACTIVE orders block re-buying — `delivered` / `confirmed` /
+      // `refunded` are terminal from the buyer's perspective and the
+      // backend already lets the buyer place a fresh order in those
+      // states. So the market card should flip back to Buy after the
+      // pay-per-call has been used.
       setOrderedIds(
         new Set(
           orders
-            .filter((o) => o.orderType === 'AGENT' && o.status !== 'refunded')
+            .filter(
+              (o) =>
+                o.orderType === 'AGENT' &&
+                (o.status === 'pending_payment' ||
+                  o.status === 'confirming' ||
+                  o.status === 'paid'),
+            )
             .map((o) => o.listingId),
         ),
       )

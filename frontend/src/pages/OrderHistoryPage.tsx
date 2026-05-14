@@ -187,9 +187,13 @@ export default function OrderHistoryPage() {
             o.disputeStatus !== 'open' &&
             o.disputeStatus !== 'resolved'
 
+          // Anchor agent detail pages on this specific order so the user
+          // can review the past Q&A even after they've bought the same
+          // agent again. Skills don't have a per-order conversation so
+          // the bare listing URL is enough.
           const detailPath =
             o.orderType === 'AGENT'
-              ? `/market/agents/${o.listingId}`
+              ? `/market/agents/${o.listingId}?order=${o.id}`
               : `/market/skills/${o.listingId}`
 
           return (
